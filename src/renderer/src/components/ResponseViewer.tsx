@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import type { ApiResponse } from '@core/types'
-import type { Tab } from '../store'
+import { useStore, type Tab } from '../store'
+import type { TestResult } from '@core/types'
 import { CodeEditor, type EditorLanguage } from './CodeEditor'
 
-type View = 'body' | 'headers' | 'cookies' | 'timeline'
+type View = 'body' | 'headers' | 'cookies' | 'tests' | 'timeline'
 type BodyView = 'pretty' | 'raw' | 'preview'
 
 const header = (res: ApiResponse, name: string): string | undefined => res.headers.find(([k]) => k.toLowerCase() === name)?.[1]
@@ -75,6 +76,8 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
   const [bodyView, setBodyView] = useState<BodyView>('pretty')
   const [wrap, setWrap] = useState(true)
   const res = tab.response
+  const tests = tab.tests ?? []
+  const failed = tests.filter((t) => !t.passed).length
 
   const contentType = res ? (header(res, 'content-type') ?? '') : ''
   const lang = languageFor(contentType)
@@ -94,6 +97,9 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
       <div className="response empty">
         <div className="error-title">Could not send request</div>
         <div className="error-msg">{tab.error}</div>
+        <button className="btn small ghost" onClick={() => useStore.getState().toggleConsole(true)}>
+          Open console
+        </button>
       </div>
     )
   }
@@ -118,11 +124,16 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
     <div className="response">
       <div className="response-bar">
         <div className="subtabs inline">
-          {(['body', 'headers', 'cookies', 'timeline'] as View[]).map((v) => (
+          {(['body', 'headers', 'cookies', 'tests', 'timeline'] as View[]).map((v) => (
             <button key={v} className={`subtab ${view === v ? 'active' : ''}`} onClick={() => setView(v)}>
-              {v[0].toUpperCase() + v.slice(1)}
+              {v === 'tests' ? 'Test Results' : v[0].toUpperCase() + v.slice(1)}
               {v === 'headers' && ` (${res.headers.length})`}
               {v === 'cookies' && cookies.length > 0 && ` (${cookies.length})`}
+              {v === 'tests' && tests.length > 0 && (
+                <span className={`test-count ${failed ? 'fail' : 'pass'}`}>
+                  {tests.length - failed}/{tests.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -136,6 +147,12 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
           <span className="meta-item">{formatBytes(res.size)}</span>
         </div>
       </div>
+
+      {tab.scriptError && (
+        <div className="script-error" onClick={() => useStore.getState().toggleConsole(true)} title="Open console">
+          ⚠ {tab.scriptError}
+        </div>
+      )}
 
       {view === 'body' && (
         <>
@@ -239,6 +256,7 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
         </div>
       )}
 
+      {view === 'tests' && <TestResults tests={tests} />}
       {view === 'timeline' && <Timeline res={res} />}
     </div>
   )
@@ -318,4 +336,36 @@ function utf8ToBase64(s: string): string {
   // Chunked so large bodies don't overflow the argument limit of fromCharCode.
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   return btoa(bin)
+}
+
+export function TestResults({ tests }: { tests: TestResult[] }): React.JSX.Element {
+  const [filter, setFilter] = useState<'all' | 'passed' | 'failed'>('all')
+  if (tests.length === 0) {
+    return (
+      <div className="scroll-pad">
+        <div className="empty-hint">
+          No tests ran. Add some in the request&apos;s <b>Scripts → Post-response</b> tab, e.g. <code>pm.test(&apos;Status is 200&apos;, () =&gt; pm.response.to.have.status(200))</code>
+        </div>
+      </div>
+    )
+  }
+  const shown = tests.filter((t) => filter === 'all' || (filter === 'passed') === t.passed)
+  return (
+    <div className="scroll-pad">
+      <div className="seg test-filter">
+        {(['all', 'passed', 'failed'] as const).map((f) => (
+          <button key={f} className={filter === f ? 'active' : ''} onClick={() => setFilter(f)}>
+            {f[0].toUpperCase() + f.slice(1)} ({f === 'all' ? tests.length : tests.filter((t) => (f === 'passed') === t.passed).length})
+          </button>
+        ))}
+      </div>
+      {shown.map((t, i) => (
+        <div key={i} className="test-row">
+          <span className={`test-badge ${t.passed ? 'pass' : 'fail'}`}>{t.passed ? 'PASS' : 'FAIL'}</span>
+          <span className="test-name">{t.name}</span>
+          {t.error && <span className="test-error mono">{t.error}</span>}
+        </div>
+      ))}
+    </div>
+  )
 }

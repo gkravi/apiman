@@ -1,19 +1,30 @@
 import { create } from 'zustand'
 import { newCollection, newEnvironment, newFolder, newRequest, newRequestItem, uid } from '@core/factory'
 import { prepareRequest } from '@core/prepare'
-import { insertItem, locate, parentAuths, removeItem, updateItem } from '@core/tree'
+import { insertItem, locate, parentAuths, removeItem, runnableRequests, scriptChain, updateItem } from '@core/tree'
+import { applyVarChanges, toVarMap } from '@core/varsync'
 import type { Scope } from '@core/variables'
 import type {
   ApiRequest,
   ApiResponse,
   Collection,
   CollectionItem,
+  ConsoleEntry,
   Environment,
+  Folder,
   PreparedRequest,
+  RunnerOptions,
+  RunnerRequestResult,
+  RunnerSummary,
+  RunRequestInput,
+  RunStep,
+  RunVariables,
+  TestResult,
   Workspace
 } from '@core/types'
 
 const HISTORY_LIMIT = 200
+const CONSOLE_LIMIT = 1000
 
 export interface Tab {
   id: string
@@ -27,6 +38,18 @@ export interface Tab {
   response?: ApiResponse
   error?: string
   sentAt?: number
+  tests?: TestResult[]
+  scriptError?: string
+}
+
+export interface RunnerState {
+  runId: string
+  collectionId: string
+  folderId: string | null
+  status: 'running' | 'done'
+  results: RunnerRequestResult[]
+  summary?: RunnerSummary
+  error?: string
 }
 
 export type SidebarView = 'collections' | 'environments' | 'history'
@@ -37,6 +60,8 @@ export type Modal =
   | { kind: 'saveAs'; tabId: string }
   | { kind: 'environment'; environmentId: string | 'globals' }
   | { kind: 'collection'; collectionId: string }
+  | { kind: 'folder'; folderId: string }
+  | { kind: 'runner'; collectionId: string; folderId: string | null }
   | { kind: 'prompt'; title: string; initial: string; onSubmit: (value: string) => void }
 
 interface State {
@@ -47,11 +72,16 @@ interface State {
   sidebar: SidebarView
   modal: Modal | null
   toast: string | null
+  console: ConsoleEntry[]
+  consoleOpen: boolean
+  runner: RunnerState | null
 
   init(): Promise<void>
   setSidebar(v: SidebarView): void
   openModal(m: Modal | null): void
   showToast(msg: string): void
+  toggleConsole(open?: boolean): void
+  clearConsole(): void
 
   // tabs
   newTab(req?: ApiRequest): void
@@ -74,6 +104,12 @@ interface State {
   renameItem(itemId: string, name: string): void
   deleteItem(itemId: string): void
   duplicateItem(itemId: string): void
+  updateFolder(folderId: string, patch: Partial<Folder>): void
+
+  // collection runner
+  startRunner(collectionId: string, folderId: string | null, requestIds: string[], options: RunnerOptions & { persistVariables: boolean }): Promise<void>
+  stopRunner(): void
+  clearRunner(): void
 
   // environments
   addEnvironment(e?: Environment): string
@@ -112,6 +148,32 @@ export function scopesFor(ws: Workspace, itemId: string | null): Scope[] {
   return [env?.variables ?? [], loc?.collection.variables ?? [], ws.globals]
 }
 
+/** Variables a run starts with: active environment, the tab's collection, globals. */
+function persistentVars(ws: Workspace, collectionId: string | undefined): Pick<RunVariables, 'environment' | 'collection' | 'globals'> {
+  const env = ws.environments.find((e) => e.id === ws.activeEnvironmentId)
+  const col = ws.collections.find((c) => c.id === collectionId)
+  return { environment: toVarMap(env?.variables ?? []), collection: toVarMap(col?.variables ?? []), globals: toVarMap(ws.globals) }
+}
+
+/** Write variable changes made by scripts back into the workspace tables. */
+function applyRunVariables(
+  ws: Workspace,
+  collectionId: string | undefined,
+  before: Pick<RunVariables, 'environment' | 'collection' | 'globals'>,
+  after: Pick<RunVariables, 'environment' | 'collection' | 'globals'>
+): Workspace {
+  return {
+    ...ws,
+    environments: ws.environments.map((e) =>
+      e.id === ws.activeEnvironmentId ? { ...e, variables: applyVarChanges(e.variables, before.environment, after.environment) } : e
+    ),
+    collections: ws.collections.map((c) =>
+      c.id === collectionId ? { ...c, variables: applyVarChanges(c.variables, before.collection, after.collection) } : c
+    ),
+    globals: applyVarChanges(ws.globals, before.globals, after.globals)
+  }
+}
+
 export function prepareTab(ws: Workspace, tab: Tab): PreparedRequest {
   const loc = tab.itemId ? locate(ws.collections, tab.itemId) : undefined
   return prepareRequest(tab.draft, scopesFor(ws, tab.itemId), loc ? parentAuths(loc) : [])
@@ -141,6 +203,9 @@ export const useStore = create<State>((set, get) => {
     sidebar: 'collections',
     modal: null,
     toast: null,
+    console: [],
+    consoleOpen: false,
+    runner: null,
 
     async init() {
       const workspace = await window.api.loadWorkspace()
@@ -153,6 +218,9 @@ export const useStore = create<State>((set, get) => {
       set({ toast })
       setTimeout(() => get().toast === toast && set({ toast: null }), 2500)
     },
+
+    toggleConsole: (open) => set((s) => ({ consoleOpen: open ?? !s.consoleOpen })),
+    clearConsole: () => set({ console: [] }),
 
     newTab(req) {
       const tab = blankTab(req)
@@ -215,30 +283,61 @@ export const useStore = create<State>((set, get) => {
     async send(tabId) {
       const tab = get().tabs.find((t) => t.id === tabId)
       if (!tab || tab.loading || !tab.draft.url.trim()) return
-      let prepared: PreparedRequest
-      try {
-        prepared = prepareTab(get().workspace, tab)
-      } catch (e) {
-        return patchTab(tabId, { error: (e as Error).message, response: undefined })
+      const ws = get().workspace
+      const loc = tab.itemId ? locate(ws.collections, tab.itemId) : undefined
+      const scripts = scriptChain(loc?.collection, loc?.folders ?? [], tab.draft)
+      const before = persistentVars(ws, loc?.collection.id)
+      const input: RunRequestInput = {
+        request: tab.draft,
+        parentAuths: loc ? parentAuths(loc) : [],
+        preRequestScripts: scripts.pre,
+        testScripts: scripts.test,
+        variables: { local: {}, data: {}, ...before },
+        info: { requestName: tab.draft.name, requestId: tab.draft.id, iteration: 0, iterationCount: 1 }
       }
+
       const execId = uid()
-      patchTab(tabId, { loading: true, execId, error: undefined, sentAt: Date.now() })
-      const result = await window.api.execute(execId, prepared)
+      patchTab(tabId, { loading: true, execId, error: undefined, scriptError: undefined, tests: undefined, sentAt: Date.now() })
+      const run = await window.api.runRequest(execId, input)
+      const result = run.result
+
+      // Script variable changes persist even when the request itself failed.
+      mutate((w) => {
+        const next = applyRunVariables(w, loc?.collection.id, before, run.variables)
+        return {
+          ...next,
+          history: [
+            {
+              id: uid(),
+              timestamp: Date.now(),
+              request: structuredClone(tab.draft),
+              status: result?.ok ? result.response.status : undefined,
+              durationMs: result?.ok ? result.response.timings.total : undefined
+            },
+            ...next.history
+          ].slice(0, HISTORY_LIMIT)
+        }
+      })
+
+      const summary: ConsoleEntry = {
+        level: result?.ok ? (result.response.status >= 400 ? 'warn' : 'info') : 'error',
+        message: run.sent
+          ? `${run.sent.method} ${run.sent.url} → ${result?.ok ? `${result.response.status} ${result.response.statusText} · ${Math.round(result.response.timings.total)} ms` : (result?.error ?? '')}`
+          : `${tab.draft.method} ${tab.draft.url} → not sent${run.scriptError ? ` (${run.scriptError})` : result && !result.ok ? ` (${result.error})` : ''}`,
+        timestamp: Date.now(),
+        source: tab.draft.name
+      }
+      set((s) => ({ console: [...s.console, ...run.console, summary].slice(-CONSOLE_LIMIT) }))
+
       if (!get().tabs.some((t) => t.id === tabId)) return
-      patchTab(tabId, result.ok ? { loading: false, execId: undefined, response: result.response, error: undefined } : { loading: false, execId: undefined, error: result.error, response: undefined })
-      mutate((ws) => ({
-        ...ws,
-        history: [
-          {
-            id: uid(),
-            timestamp: Date.now(),
-            request: structuredClone(tab.draft),
-            status: result.ok ? result.response.status : undefined,
-            durationMs: result.ok ? result.response.timings.total : undefined
-          },
-          ...ws.history
-        ].slice(0, HISTORY_LIMIT)
-      }))
+      patchTab(tabId, {
+        loading: false,
+        execId: undefined,
+        response: result?.ok ? result.response : undefined,
+        error: result && !result.ok ? result.error : !result ? run.scriptError : undefined,
+        scriptError: run.scriptError,
+        tests: run.tests
+      })
     },
     cancel(tabId) {
       const tab = get().tabs.find((t) => t.id === tabId)
@@ -274,6 +373,54 @@ export const useStore = create<State>((set, get) => {
       const parent = loc.folders[0]?.id ?? null
       mapCollection(loc.collection.id, (c) => ({ ...c, items: insertItem(c.items, parent, cloneItem(loc.item)) }))
     },
+
+    updateFolder(folderId, patch) {
+      mapCollectionOf(folderId, (c) => ({ ...c, items: updateItem(c.items, folderId, (i) => (i.type === 'folder' ? { ...i, ...patch } : i)) }))
+    },
+
+    async startRunner(collectionId, folderId, requestIds, { persistVariables, ...options }) {
+      if (get().runner?.status === 'running') return
+      const ws = get().workspace
+      const collection = ws.collections.find((c) => c.id === collectionId)
+      if (!collection) return
+      const wanted = new Set(requestIds)
+      const steps: RunStep[] = runnableRequests(collection, folderId)
+        .filter((r) => wanted.has(r.item.id))
+        .map(({ item, folders }) => {
+          const scripts = scriptChain(collection, folders, item.request)
+          return {
+            request: item.request,
+            parentAuths: [...folders.map((f) => f.auth), collection.auth],
+            preRequestScripts: scripts.pre,
+            testScripts: scripts.test
+          }
+        })
+      const runId = uid()
+      const before = persistentVars(ws, collectionId)
+      set({ runner: { runId, collectionId, folderId, status: 'running', results: [] } })
+
+      const off = window.api.onRunnerResult((id, r) => {
+        if (id !== runId) return
+        set((s) => ({
+          runner: s.runner && s.runner.runId === runId ? { ...s.runner, results: [...s.runner.results, r] } : s.runner,
+          console: [...s.console, ...r.console].slice(-CONSOLE_LIMIT)
+        }))
+      })
+      try {
+        const { summary, variables } = await window.api.startRunner(runId, steps, before, options)
+        if (persistVariables) mutate((w) => applyRunVariables(w, collectionId, before, variables))
+        set((s) => ({ runner: s.runner?.runId === runId ? { ...s.runner, status: 'done', summary } : s.runner }))
+      } catch (e) {
+        set((s) => ({ runner: s.runner?.runId === runId ? { ...s.runner, status: 'done', error: (e as Error).message } : s.runner }))
+      } finally {
+        off()
+      }
+    },
+    stopRunner() {
+      const r = get().runner
+      if (r?.status === 'running') void window.api.cancel(r.runId)
+    },
+    clearRunner: () => set((s) => (s.runner?.status === 'running' ? {} : { runner: null })),
 
     addEnvironment(e = newEnvironment()) {
       mutate((ws) => ({ ...ws, environments: [...ws.environments, e] }))

@@ -67,11 +67,13 @@ function TreeItem({ item, collection, depth }: { item: CollectionItem; collectio
         <span className="tree-label">{item.name}</span>
         <ItemMenu
           items={[
+            { label: 'Run folder', onClick: () => s.openModal({ kind: 'runner', collectionId: collection.id, folderId: item.id }) },
             { label: 'Add request', onClick: () => s.addRequestTo(collection.id, item.id) },
             {
               label: 'Add folder',
               onClick: () => s.openModal({ kind: 'prompt', title: 'Folder name', initial: 'New Folder', onSubmit: (v) => s.addFolder(collection.id, item.id, v) })
             },
+            { label: 'Edit scripts & auth', onClick: () => s.openModal({ kind: 'folder', folderId: item.id }) },
             { label: 'Rename', onClick: () => rename(item.name) },
             { label: 'Duplicate', onClick: () => s.duplicateItem(item.id) },
             { label: 'Delete', danger: true, onClick: () => s.deleteItem(item.id) }
@@ -98,12 +100,13 @@ function CollectionNode({ collection }: { collection: Collection }): React.JSX.E
         <span className="tree-label strong">{collection.name}</span>
         <ItemMenu
           items={[
+            { label: 'Run collection', onClick: () => s.openModal({ kind: 'runner', collectionId: collection.id, folderId: null }) },
             { label: 'Add request', onClick: () => s.addRequestTo(collection.id, null) },
             {
               label: 'Add folder',
               onClick: () => s.openModal({ kind: 'prompt', title: 'Folder name', initial: 'New Folder', onSubmit: (v) => s.addFolder(collection.id, null, v) })
             },
-            { label: 'Edit variables & auth', onClick: () => s.openModal({ kind: 'collection', collectionId: collection.id }) },
+            { label: 'Edit variables, auth & scripts', onClick: () => s.openModal({ kind: 'collection', collectionId: collection.id }) },
             {
               label: 'Rename',
               onClick: () => s.openModal({ kind: 'prompt', title: 'Rename collection', initial: collection.name, onSubmit: (v) => s.updateCollection(collection.id, { name: v }) })

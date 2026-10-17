@@ -9,8 +9,9 @@ import { HTTP_METHODS, type Auth, type AuthType, type BodyMode, type FormField, 
 import { scopesFor, useStore, type Tab } from '../store'
 import { KeyValueTable } from './KeyValueTable'
 import { CodeEditor } from './CodeEditor'
+import { ScriptsEditor } from './ScriptsEditor'
 
-type Section = 'params' | 'auth' | 'headers' | 'body' | 'settings'
+type Section = 'params' | 'auth' | 'headers' | 'body' | 'scripts' | 'settings'
 
 export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
   const s = useStore()
@@ -21,6 +22,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
   const scopes = scopesFor(s.workspace, tab.itemId)
   const unresolved = [...new Set(unresolvedVariables(r.url, scopes))]
   const loc = tab.itemId ? locate(s.workspace.collections, tab.itemId) : undefined
+  const scriptChainHasPre = Boolean(loc && (loc.collection.scripts?.preRequest.trim() || loc.folders.some((f) => f.scripts?.preRequest.trim())))
   const breadcrumb = loc ? [loc.collection.name, ...loc.folders.map((f) => f.name).reverse()] : []
 
   const onUrl = (url: string): void => update({ url, params: paramsFromUrl(url, r.params) })
@@ -44,6 +46,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
     { id: 'auth', label: 'Authorization' },
     { id: 'headers', label: `Headers${count(r.headers.filter((h) => h.enabled).length)}` },
     { id: 'body', label: 'Body' },
+    { id: 'scripts', label: 'Scripts' },
     { id: 'settings', label: 'Settings' }
   ]
 
@@ -111,6 +114,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
         <div className="warn-line">
           Unresolved variable{unresolved.length > 1 ? 's' : ''}: {unresolved.map((v) => `{{${v}}}`).join(', ')}
           {!s.workspace.activeEnvironmentId && ' — no environment is selected'}
+          {(r.scripts?.preRequest.trim() || scriptChainHasPre) && ' (a pre-request script may set it)'}
         </div>
       )}
 
@@ -120,6 +124,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
             {sec.label}
             {sec.id === 'body' && r.body.mode !== 'none' && <span className="dot" />}
             {sec.id === 'auth' && r.auth.type !== 'inherit' && r.auth.type !== 'none' && <span className="dot" />}
+            {sec.id === 'scripts' && (r.scripts?.preRequest.trim() || r.scripts?.test.trim()) && <span className="dot" />}
           </button>
         ))}
       </div>
@@ -140,6 +145,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
         )}
         {section === 'auth' && <AuthEditor auth={r.auth} onChange={(auth) => update({ auth })} inherited={loc ? effectiveAuth({ type: 'inherit' }, parentAuths(loc)) : undefined} />}
         {section === 'body' && <BodyEditor body={r.body} onChange={(body) => update({ body })} />}
+        {section === 'scripts' && <ScriptsEditor scripts={r.scripts} onChange={(scripts) => update({ scripts })} scopeLabel="request" />}
         {section === 'settings' && (
           <div className="settings-grid">
             <label className="check">

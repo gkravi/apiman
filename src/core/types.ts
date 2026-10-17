@@ -53,6 +53,12 @@ export const DEFAULT_SETTINGS: RequestSettings = {
   timeoutMs: 30000
 }
 
+/** JavaScript run in the sandbox before the request is sent and after the response arrives. */
+export interface Scripts {
+  preRequest: string
+  test: string
+}
+
 export interface ApiRequest {
   id: string
   name: string
@@ -63,6 +69,7 @@ export interface ApiRequest {
   body: RequestBody
   auth: Auth
   settings: RequestSettings
+  scripts?: Scripts
 }
 
 export interface Folder {
@@ -71,6 +78,7 @@ export interface Folder {
   name: string
   items: CollectionItem[]
   auth?: Auth
+  scripts?: Scripts
 }
 
 export interface RequestItem {
@@ -87,6 +95,7 @@ export interface Collection {
   items: CollectionItem[]
   variables: KeyValue[]
   auth: Auth
+  scripts?: Scripts
 }
 
 export interface Variable extends KeyValue {
@@ -154,3 +163,92 @@ export interface ApiResponse {
 }
 
 export type ExecuteResult = { ok: true; response: ApiResponse } | { ok: false; error: string }
+
+// ---------- scripting & runs ----------
+
+export interface TestResult {
+  name: string
+  passed: boolean
+  error?: string
+}
+
+export type LogLevel = 'log' | 'info' | 'warn' | 'error'
+
+export interface ConsoleEntry {
+  level: LogLevel
+  message: string
+  timestamp: number
+  /** Which request produced it, for the console panel. */
+  source?: string
+}
+
+export type VarMap = Record<string, string>
+
+/** Variable state carried through a run, highest priority first when resolving. */
+export interface RunVariables {
+  local: VarMap
+  data: VarMap
+  environment: VarMap
+  collection: VarMap
+  globals: VarMap
+}
+
+export interface RunRequestInput extends RunStep {
+  variables: RunVariables
+  info: { requestName: string; requestId: string; iteration: number; iterationCount: number }
+}
+
+export interface RunRequestResult {
+  /** Undefined when a pre-request script failed and the request was never sent. */
+  result?: ExecuteResult
+  sent?: { method: string; url: string; headers: [string, string][] }
+  tests: TestResult[]
+  console: ConsoleEntry[]
+  variables: RunVariables
+  scriptError?: string
+  /** Set by pm.execution.setNextRequest: a request name, or null to stop. Undefined means "carry on". */
+  nextRequest?: string | null
+}
+
+export interface RunnerOptions {
+  iterations: number
+  delayMs: number
+  /** One row per iteration; when present, iterations defaults to its length. */
+  data: VarMap[]
+  stopOnError: boolean
+}
+
+export interface RunnerRequestResult {
+  iteration: number
+  requestId: string
+  name: string
+  method: HttpMethod
+  url: string
+  status?: number
+  statusText?: string
+  durationMs?: number
+  size?: number
+  /** Network/transport error, or the script error that stopped the request. */
+  error?: string
+  scriptError?: string
+  tests: TestResult[]
+  console: ConsoleEntry[]
+}
+
+/** One request in a run with everything it inherits from its folders and collection. */
+export interface RunStep {
+  request: ApiRequest
+  parentAuths: (Auth | undefined)[]
+  preRequestScripts: string[]
+  testScripts: string[]
+}
+
+export interface RunnerSummary {
+  iterations: number
+  requests: number
+  testsPassed: number
+  testsFailed: number
+  errors: number
+  durationMs: number
+  aborted: boolean
+}

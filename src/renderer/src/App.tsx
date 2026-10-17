@@ -5,6 +5,7 @@ import { TabBar } from './components/TabBar'
 import { RequestEditor } from './components/RequestEditor'
 import { ResponseViewer } from './components/ResponseViewer'
 import { ModalHost } from './components/Modals'
+import { ConsolePanel } from './components/ConsolePanel'
 
 function EnvironmentSelect(): React.JSX.Element {
   const s = useStore()
@@ -119,6 +120,7 @@ export function App(): React.JSX.Element {
           <Workbench />
         </section>
       </div>
+      <ConsolePanel />
       <ModalHost />
       {s.toast && <div className="toast">{s.toast}</div>}
     </div>

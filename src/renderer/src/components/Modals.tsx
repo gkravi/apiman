@@ -8,6 +8,9 @@ import { prepareTab, useStore, type Modal } from '../store'
 import { CodeEditor } from './CodeEditor'
 import { KeyValueTable } from './KeyValueTable'
 import { AuthEditor } from './RequestEditor'
+import { ScriptsEditor } from './ScriptsEditor'
+import { RunnerModal } from './RunnerModal'
+import { locate } from '@core/tree'
 
 function Shell({ title, onClose, children, wide, footer }: { title: string; onClose(): void; children: React.ReactNode; wide?: boolean; footer?: React.ReactNode }): React.JSX.Element {
   useEffect(() => {
@@ -301,7 +304,7 @@ function EnvironmentModal({ environmentId, close }: { environmentId: string | 'g
 
 function CollectionModal({ collectionId, close }: { collectionId: string; close(): void }): React.JSX.Element | null {
   const s = useStore()
-  const [section, setSection] = useState<'variables' | 'auth'>('variables')
+  const [section, setSection] = useState<'variables' | 'auth' | 'scripts'>('variables')
   const c = s.workspace.collections.find((x) => x.id === collectionId)
   if (!c) return null
   return (
@@ -325,9 +328,17 @@ function CollectionModal({ collectionId, close }: { collectionId: string; close(
         <button className={`subtab ${section === 'auth' ? 'active' : ''}`} onClick={() => setSection('auth')}>
           Authorization
         </button>
+        <button className={`subtab ${section === 'scripts' ? 'active' : ''}`} onClick={() => setSection('scripts')}>
+          Scripts
+        </button>
       </div>
-      <div className="section-body">
-        {section === 'variables' ? (
+      <div className="section-body modal-section">
+        {section === 'scripts' ? (
+          <>
+            <p className="hint">These run around every request in the collection, before folder and request scripts.</p>
+            <ScriptsEditor scripts={c.scripts} onChange={(scripts) => s.updateCollection(c.id, { scripts })} scopeLabel="collection's requests" />
+          </>
+        ) : section === 'variables' ? (
           <>
             <p className="hint">Collection variables apply to every request in this collection. The active environment overrides them.</p>
             <VariablesTable rows={c.variables} onChange={(variables) => s.updateCollection(c.id, { variables })} />
@@ -337,6 +348,48 @@ function CollectionModal({ collectionId, close }: { collectionId: string; close(
             <p className="hint">Requests set to "Inherit auth from parent" use this.</p>
             <AuthEditor auth={c.auth} onChange={(auth) => s.updateCollection(c.id, { auth })} allowInherit={false} />
           </>
+        )}
+      </div>
+    </Shell>
+  )
+}
+
+function FolderModal({ folderId, close }: { folderId: string; close(): void }): React.JSX.Element | null {
+  const s = useStore()
+  const [section, setSection] = useState<'auth' | 'scripts'>('scripts')
+  const loc = locate(s.workspace.collections, folderId)
+  if (!loc || loc.item.type !== 'folder') return null
+  const folder = loc.item
+  return (
+    <Shell
+      title={folder.name}
+      onClose={close}
+      wide
+      footer={
+        <>
+          <span className="spacer" />
+          <button className="btn primary" onClick={close}>
+            Done
+          </button>
+        </>
+      }
+    >
+      <div className="subtabs">
+        <button className={`subtab ${section === 'scripts' ? 'active' : ''}`} onClick={() => setSection('scripts')}>
+          Scripts
+        </button>
+        <button className={`subtab ${section === 'auth' ? 'active' : ''}`} onClick={() => setSection('auth')}>
+          Authorization
+        </button>
+      </div>
+      <div className="section-body modal-section">
+        {section === 'scripts' ? (
+          <>
+            <p className="hint">Folder scripts run after the collection&apos;s and before each request&apos;s own.</p>
+            <ScriptsEditor scripts={folder.scripts} onChange={(scripts) => s.updateFolder(folderId, { scripts })} scopeLabel="folder's requests" />
+          </>
+        ) : (
+          <AuthEditor auth={folder.auth ?? { type: 'inherit' }} onChange={(auth) => s.updateFolder(folderId, { auth })} />
         )}
       </div>
     </Shell>
@@ -389,5 +442,9 @@ export function ModalHost(): React.JSX.Element | null {
       return <CollectionModal collectionId={modal.collectionId} close={close} />
     case 'prompt':
       return <PromptModal title={modal.title} initial={modal.initial} onSubmit={modal.onSubmit} close={close} />
+    case 'folder':
+      return <FolderModal folderId={modal.folderId} close={close} />
+    case 'runner':
+      return <RunnerModal collectionId={modal.collectionId} folderId={modal.folderId} close={close} />
   }
 }

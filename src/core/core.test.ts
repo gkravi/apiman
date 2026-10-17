@@ -176,3 +176,44 @@ describe('executor', () => {
     if (!r.ok) expect(r.error).toMatch(/Connection refused/)
   })
 })
+
+import { applyVarChanges, parseDataFile, toVarMap } from './varsync'
+
+describe('varsync', () => {
+  it('applies script changes without disturbing other rows', () => {
+    const rows = [newKeyValue('a', '1'), { ...newKeyValue('b', 'off'), enabled: false }, { ...newKeyValue('s', 'x'), secret: true }, newKeyValue('gone', 'y')]
+    const before = toVarMap(rows)
+    expect(before).toEqual({ a: '1', s: 'x', gone: 'y' })
+    const out = applyVarChanges(rows, before, { a: '2', s: 'x2', n: 'new' })
+    expect(out.map((r) => [r.key, r.value, r.enabled])).toEqual([['a', '2', true], ['b', 'off', false], ['s', 'x2', true], ['n', 'new', true]])
+    expect(out[0].id).toBe(rows[0].id)
+    expect((out[2] as { secret?: boolean }).secret).toBe(true)
+  })
+  it('parses CSV and JSON data files', () => {
+    expect(parseDataFile('id,name\r\n1,"Ada, L"\n2,"say ""hi"""\n\n', 'd.csv')).toEqual([{ id: '1', name: 'Ada, L' }, { id: '2', name: 'say "hi"' }])
+    expect(parseDataFile('[{"id":1,"tags":["x"]}]', 'd.json')).toEqual([{ id: '1', tags: '["x"]' }])
+  })
+})
+
+describe('postman scripts', () => {
+  it('imports and exports pre-request/test events at every level', () => {
+    const ev = (pre: string, test: string): unknown[] => [
+      { listen: 'prerequest', script: { exec: pre.split('\n') } },
+      { listen: 'test', script: { exec: test.split('\n') } }
+    ]
+    const c = importPostmanCollection({
+      info: { name: 'S', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      event: ev('// col pre', '// col test'),
+      item: [{ name: 'F', event: ev('', '// folder test'), item: [{ name: 'R', event: ev("pm.variables.set('a', 1)\n// two", ''), request: { method: 'GET', url: 'x' } }] }]
+    })
+    expect(c.scripts).toEqual({ preRequest: '// col pre', test: '// col test' })
+    const f = c.items[0]
+    if (f.type !== 'folder' || f.items[0].type !== 'request') throw new Error('bad shape')
+    expect(f.scripts).toEqual({ preRequest: '', test: '// folder test' })
+    expect(f.items[0].request.scripts?.preRequest).toBe("pm.variables.set('a', 1)\n// two")
+    const out = exportPostmanCollection(c)
+    expect(out.event).toHaveLength(2)
+    expect(out.item[0].event).toEqual([{ listen: 'test', script: { type: 'text/javascript', exec: ['// folder test'] } }])
+    expect(out.item[0].item[0].event[0].script.exec).toEqual(["pm.variables.set('a', 1)", '// two'])
+  })
+})

@@ -25,6 +25,9 @@
   ],
   "exclude": [
     "src/core/executor.ts",
+    "src/core/run.ts",
+    "src/core/sandbox.ts",
+    "src/core/sandbox-prelude.ts",
     "src/core/**/*.test.ts"
   ]
 }

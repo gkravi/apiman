@@ -1,4 +1,4 @@
-import type { Auth, Collection, CollectionItem, Folder, RequestItem } from './types'
+import type { ApiRequest, Auth, Collection, CollectionItem, Folder, RequestItem } from './types'
 
 // Immutable helpers for the collection tree (collection → folders → requests).
 
@@ -55,4 +55,30 @@ export function insertItem(items: CollectionItem[], parentId: string | null, chi
 
 export function allRequests(items: CollectionItem[]): RequestItem[] {
   return items.flatMap((i) => (i.type === 'folder' ? allRequests(i.items) : [i]))
+}
+
+/**
+ * Scripts that run around a request, outermost first (collection → folders → request),
+ * matching Postman's execution order.
+ */
+export function scriptChain(collection: Collection | undefined, folders: Folder[], request: ApiRequest): { pre: string[]; test: string[] } {
+  const owners = [collection?.scripts, ...[...folders].reverse().map((f) => f.scripts), request.scripts]
+  const pick = (k: 'preRequest' | 'test'): string[] => owners.map((s) => s?.[k] ?? '').filter((code) => code.trim())
+  return { pre: pick('preRequest'), test: pick('test') }
+}
+
+export interface RunnableRequest {
+  item: RequestItem
+  /** Ancestor folders, nearest first. */
+  folders: Folder[]
+}
+
+/** Requests in run order (depth-first), optionally limited to one folder of the collection. */
+export function runnableRequests(collection: Collection, folderId: string | null = null): RunnableRequest[] {
+  const walk = (items: CollectionItem[], folders: Folder[]): RunnableRequest[] =>
+    items.flatMap((i) => (i.type === 'folder' ? walk(i.items, [i, ...folders]) : [{ item: i, folders }]))
+  if (!folderId) return walk(collection.items, [])
+  const loc = locate([collection], folderId)
+  if (!loc || loc.item.type !== 'folder') return []
+  return walk(loc.item.items, [loc.item, ...loc.folders])
 }

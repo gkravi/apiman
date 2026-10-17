@@ -14,7 +14,8 @@ import {
   type HttpMethod,
   type KeyValue,
   type RawLanguage,
-  type RequestBody
+  type RequestBody,
+  type Scripts
 } from './types'
 
 type Json = any
@@ -56,6 +57,25 @@ function exportAuth(a: Auth | undefined): Json {
     case 'apikey':
       return { type: 'apikey', apikey: kv({ key: a.key, value: a.value, in: a.in }) }
   }
+}
+
+const scriptText = (events: Json[] | undefined, listen: string): string => {
+  const exec = events?.find((e) => e?.listen === listen)?.script?.exec
+  return Array.isArray(exec) ? exec.join('\n') : String(exec ?? '')
+}
+
+function importScripts(events: Json[] | undefined): Scripts | undefined {
+  const preRequest = scriptText(events, 'prerequest')
+  const test = scriptText(events, 'test')
+  return preRequest || test ? { preRequest, test } : undefined
+}
+
+function exportScripts(s: Scripts | undefined): Json[] | undefined {
+  const events = [
+    s?.preRequest.trim() && { listen: 'prerequest', script: { type: 'text/javascript', exec: s.preRequest.split('\n') } },
+    s?.test.trim() && { listen: 'test', script: { type: 'text/javascript', exec: s.test.split('\n') } }
+  ].filter(Boolean)
+  return events.length ? events : undefined
 }
 
 function importBody(b: Json): RequestBody {
@@ -113,8 +133,8 @@ function exportBody(b: RequestBody): Json {
   }
 }
 
-function importRequest(name: string, r: Json): ApiRequest {
-  if (typeof r === 'string') return newRequest({ name, url: r, params: paramsFromUrl(r) })
+function importRequest(name: string, r: Json, events?: Json[]): ApiRequest {
+  if (typeof r === 'string') return newRequest({ name, url: r, params: paramsFromUrl(r), scripts: importScripts(events) })
   const url = typeof r.url === 'string' ? r.url : String(r.url?.raw ?? '')
   const method = String(r.method ?? 'GET').toUpperCase() as HttpMethod
   const params = paramsFromUrl(url)
@@ -127,16 +147,17 @@ function importRequest(name: string, r: Json): ApiRequest {
     params: [...params, ...toKv(disabled)],
     headers: toKv(r.header),
     body: importBody(r.body),
-    auth: importAuth(r.auth) ?? { type: 'inherit' }
+    auth: importAuth(r.auth) ?? { type: 'inherit' },
+    scripts: importScripts(events)
   })
 }
 
 function importItems(items: Json[] | undefined): CollectionItem[] {
   return (items ?? []).map((it: Json): CollectionItem => {
     if (Array.isArray(it.item)) {
-      return { id: uid(), type: 'folder', name: String(it.name ?? 'Folder'), items: importItems(it.item), auth: importAuth(it.auth) }
+      return { id: uid(), type: 'folder', name: String(it.name ?? 'Folder'), items: importItems(it.item), auth: importAuth(it.auth), scripts: importScripts(it.event) }
     }
-    const request = importRequest(String(it.name ?? 'Request'), it.request ?? {})
+    const request = importRequest(String(it.name ?? 'Request'), it.request ?? {}, it.event)
     return { id: request.id, type: 'request', request }
   })
 }
@@ -157,7 +178,8 @@ export function importPostmanCollection(json: Json): Collection {
     ...newCollection(String(json.info.name ?? 'Imported Collection')),
     items: importItems(json.item),
     variables: toKv(json.variable),
-    auth: importAuth(json.auth) ?? { type: 'none' }
+    auth: importAuth(json.auth) ?? { type: 'none' },
+    scripts: importScripts(json.event)
   }
 }
 
@@ -175,10 +197,11 @@ export function importPostmanEnvironment(json: Json): Environment {
 
 function exportItems(items: CollectionItem[]): Json[] {
   return items.map((it) => {
-    if (it.type === 'folder') return { name: it.name, item: exportItems(it.items), auth: exportAuth(it.auth) }
+    if (it.type === 'folder') return { name: it.name, item: exportItems(it.items), auth: exportAuth(it.auth), event: exportScripts(it.scripts) }
     const r = it.request
     return {
       name: r.name,
+      event: exportScripts(r.scripts),
       request: {
         method: r.method,
         header: r.headers.map((h) => ({ key: h.key, value: h.value, disabled: !h.enabled || undefined })),
@@ -198,7 +221,8 @@ export function exportPostmanCollection(c: Collection): Json {
     info: { _postman_id: c.id, name: c.name, schema: SCHEMA_V21 },
     item: exportItems(c.items),
     variable: c.variables.map((v) => ({ key: v.key, value: v.value, disabled: !v.enabled || undefined })),
-    auth: exportAuth(c.auth)
+    auth: exportAuth(c.auth),
+    event: exportScripts(c.scripts)
   }
 }
 

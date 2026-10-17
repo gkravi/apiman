@@ -1,11 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { execute } from '@core/executor'
-import type { PreparedRequest } from '@core/types'
+import { runCollection, runRequest } from '@core/run'
+import type { RunnerOptions, RunRequestInput, RunStep, RunVariables } from '@core/types'
 import { loadWorkspace, saveWorkspace } from './storage'
 
 const inflight = new Map<string, AbortController>()
+
+// Lets a second instance (tests, demos) use its own workspace instead of the real one.
+if (process.env.APIMAN_USER_DATA) app.setPath('userData', process.env.APIMAN_USER_DATA)
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -37,16 +40,30 @@ function createWindow(): void {
 ipcMain.handle('workspace:load', () => loadWorkspace())
 ipcMain.handle('workspace:save', (_e, ws) => saveWorkspace(ws))
 
-ipcMain.handle('http:execute', async (_e, id: string, req: PreparedRequest) => {
+// Every in-flight request or runner is cancellable by the id the renderer gave it.
+async function cancellable<T>(id: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const ctrl = new AbortController()
   inflight.set(id, ctrl)
   try {
-    return await execute(req, ctrl.signal)
+    return await fn(ctrl.signal)
   } finally {
     inflight.delete(id)
   }
-})
-ipcMain.handle('http:cancel', (_e, id: string) => inflight.get(id)?.abort())
+}
+
+ipcMain.handle('run:request', (_e, id: string, input: RunRequestInput) => cancellable(id, (signal) => runRequest(input, signal)))
+ipcMain.handle('run:cancel', (_e, id: string) => inflight.get(id)?.abort())
+
+ipcMain.handle(
+  'runner:start',
+  (e, runId: string, steps: RunStep[], vars: Pick<RunVariables, 'environment' | 'collection' | 'globals'>, options: RunnerOptions) =>
+    cancellable(runId, (signal) =>
+      runCollection(steps, vars, options, {
+        signal,
+        onResult: (r) => !e.sender.isDestroyed() && e.sender.send('runner:result', runId, r)
+      })
+    )
+)
 
 ipcMain.handle('dialog:pickFile', async () => {
   const r = await dialog.showOpenDialog({ properties: ['openFile'] })
@@ -55,6 +72,12 @@ ipcMain.handle('dialog:pickFile', async () => {
 
 ipcMain.handle('dialog:openJson', async () => {
   const r = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
+  if (r.canceled) return null
+  return { path: r.filePaths[0], content: await readFile(r.filePaths[0], 'utf8') }
+})
+
+ipcMain.handle('dialog:openData', async () => {
+  const r = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'Data files', extensions: ['csv', 'json'] }] })
   if (r.canceled) return null
   return { path: r.filePaths[0], content: await readFile(r.filePaths[0], 'utf8') }
 })
