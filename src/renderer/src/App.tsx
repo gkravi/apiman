@@ -8,7 +8,22 @@ import { ModalHost } from './components/Modals'
 import { ConsolePanel } from './components/ConsolePanel'
 import { LiveViewer } from './components/LiveEditors'
 import { Logo } from './components/Logo'
-import { CookieIcon, EyeIcon, ImportIcon, PlusIcon, SettingsIcon } from './components/Icons'
+import { watchSystemTheme } from './theme'
+import { CookieIcon, EyeIcon, ImportIcon, MoonIcon, PlusIcon, SearchIcon, SettingsIcon, SunIcon, SystemThemeIcon } from './components/Icons'
+import { CommandPalette } from './components/CommandPalette'
+
+const NEXT_THEME = { system: 'light', light: 'dark', dark: 'system' } as const
+
+function ThemeButton(): React.JSX.Element {
+  const pref = useStore((st) => st.themePref)
+  const setPref = useStore((st) => st.setThemePref)
+  const label = { system: 'System theme', light: 'Light theme', dark: 'Dark theme' }[pref]
+  return (
+    <button className="icon-btn theme-btn" onClick={() => setPref(NEXT_THEME[pref])} title={`${label} — click for ${NEXT_THEME[pref]}`}>
+      {pref === 'system' ? <SystemThemeIcon /> : pref === 'light' ? <SunIcon /> : <MoonIcon />}
+    </button>
+  )
+}
 
 function EnvironmentSelect(): React.JSX.Element {
   const s = useStore()
@@ -74,9 +89,11 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void useStore.getState().init()
     // Monitors: check every 30 s which ones are due (first check shortly after start-up).
+    const unwatchTheme = watchSystemTheme(() => useStore.getState().syncTheme())
     const first = setTimeout(() => useStore.getState().tickMonitors(), 5000)
     const timer = setInterval(() => useStore.getState().tickMonitors(), 30_000)
     return () => {
+      unwatchTheme()
       clearTimeout(first)
       clearInterval(timer)
     }
@@ -97,6 +114,9 @@ export function App(): React.JSX.Element {
       } else if (e.key === 't') {
         e.preventDefault()
         st.newTab()
+      } else if (e.key === 'k' || e.key === 'p') {
+        e.preventDefault()
+        st.togglePalette()
       } else if (e.key === 'o') {
         e.preventDefault()
         st.openModal({ kind: 'import' })
@@ -120,7 +140,13 @@ export function App(): React.JSX.Element {
         <button className="btn small" onClick={() => s.openModal({ kind: 'import' })} title="Import (⌘O)">
           <ImportIcon size={14} /> Import
         </button>
+        <button className="palette-trigger" onClick={() => s.togglePalette(true)} title="Search requests, environments and commands (⌘K)">
+          <SearchIcon size={14} />
+          <span>Search or run a command</span>
+          <kbd>⌘K</kbd>
+        </button>
         <span className="spacer" />
+        <ThemeButton />
         <button className="btn small ghost" onClick={() => s.openModal({ kind: 'cookies' })}>
           <CookieIcon size={14} /> Cookies
         </button>
@@ -138,6 +164,7 @@ export function App(): React.JSX.Element {
       </div>
       <ConsolePanel />
       <ModalHost />
+      {s.paletteOpen && <CommandPalette />}
       {s.toast && <div className="toast">{s.toast}</div>}
     </div>
   )

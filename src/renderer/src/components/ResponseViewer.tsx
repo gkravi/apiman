@@ -5,6 +5,8 @@ import type { TestResult } from '@core/types'
 import { CodeEditor, type EditorLanguage } from './CodeEditor'
 import { formatBytes } from '../format'
 import { Logo } from './Logo'
+import { FilterIcon } from './Icons'
+import { filterJson } from '@core/jsonpath'
 
 type View = 'body' | 'headers' | 'cookies' | 'tests' | 'timeline'
 type BodyView = 'pretty' | 'raw' | 'preview'
@@ -79,6 +81,17 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
   const contentType = res ? (header(res, 'content-type') ?? '') : ''
   const lang = languageFor(contentType)
   const pretty = useMemo(() => (res && res.bodyEncoding === 'utf8' ? prettify(res.body, lang) : ''), [res, lang])
+  // JSONPath filter over JSON bodies; kept per tab (this component is keyed by tab) across re-sends.
+  const [filter, setFilter] = useState('')
+  const filtered = useMemo(() => {
+    if (!res || lang !== 'json' || !filter.trim()) return null
+    try {
+      const { result, count } = filterJson(res.body, filter)
+      return { text: JSON.stringify(result, null, 2) ?? 'undefined', count, error: undefined as string | undefined }
+    } catch (e) {
+      return { text: '', count: 0, error: e instanceof SyntaxError ? 'The body is not valid JSON' : (e as Error).message }
+    }
+  }, [res, lang, filter])
   const cookies = useMemo(() => (res ? res.headers.filter(([k]) => k.toLowerCase() === 'set-cookie').map(([, v]) => parseSetCookie(v)) : []), [res])
 
   if (tab.loading) {
@@ -195,6 +208,25 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
               Save as example
             </button>
           </div>
+          {lang === 'json' && res.bodyEncoding === 'utf8' && bodyView !== 'preview' && (
+            <div className={`json-filter ${filtered?.error ? 'bad' : ''}`}>
+              <FilterIcon size={14} />
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter with JSONPath, e.g. $.data[*].email  ·  $..id  ·  $.items[?(@.price < 10)]  ·  .data[0]"
+                spellCheck={false}
+              />
+              {filter && (
+                <span className="filter-status">{filtered?.error ? filtered.error : `${filtered?.count ?? 0} match${filtered?.count === 1 ? '' : 'es'}`}</span>
+              )}
+              {filter && (
+                <button className="icon-btn" title="Clear filter" onClick={() => setFilter('')}>
+                  ✕
+                </button>
+              )}
+            </div>
+          )}
           <div className="response-body">
             {res.bodyEncoding === 'base64' ? (
               isImage ? (
@@ -206,9 +238,14 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
               )
             ) : bodyView === 'preview' ? (
               // Sandboxed with no scripts so a malicious response can't touch the app.
-              <iframe className="preview-frame" sandbox="" srcDoc={lang === 'html' ? res.body : `<pre style="color:#ddd;white-space:pre-wrap">${escapeHtml(pretty)}</pre>`} title="Preview" />
+              <iframe className="preview-frame" sandbox="" srcDoc={lang === 'html' ? res.body : `<pre style="color:#1f2328;white-space:pre-wrap;font:12px ui-monospace,Menlo,monospace">${escapeHtml(pretty)}</pre>`} title="Preview" />
             ) : (
-              <CodeEditor value={bodyView === 'pretty' ? pretty : res.body} language={bodyView === 'pretty' ? lang : 'text'} readOnly wrap={wrap} />
+              <CodeEditor
+                value={filtered && !filtered.error ? filtered.text : bodyView === 'pretty' ? pretty : res.body}
+                language={filtered && !filtered.error ? 'json' : bodyView === 'pretty' ? lang : 'text'}
+                readOnly
+                wrap={wrap}
+              />
             )}
           </div>
         </>

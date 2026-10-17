@@ -12,11 +12,17 @@ All notable changes to ApiMan. Versions follow [semantic versioning](https://sem
   social preview image.
 
 ### Added
+- **Command palette** (⌘K / ⌘P): fuzzy search across requests, open tabs, environments, recent history
+  and ~25 commands; `>` for commands only.
+- **Light theme**, with System / Light / Dark switching from the top bar, Settings or the palette.
+- **Bulk edit** for params, headers and URL-encoded bodies (`key: value` per line, `//` to disable).
+- **JSONPath response filter** for JSON bodies (filters, recursion, slices, regex; jq-style paths too).
 - Comprehensive documentation in [`docs/`](docs/README.md): user guide, scripting API and CLI
   references, architecture, contributing and release guides, with screenshots.
 - Scripts can use top-level `await` (e.g. `const res = await pm.sendRequest(…)`), as in Postman.
 
 ### Fixed
+- The Preview tab showed non-HTML bodies as light grey text on white; it's now readable.
 - `pm.variables.replaceIn()` now supports every dynamic variable, not just five.
 - The CLI creates missing folders for report and export paths (e.g. `reports/junit.xml`).
 - Unknown CLI options print a short usage error (exit code 2) instead of a stack trace.

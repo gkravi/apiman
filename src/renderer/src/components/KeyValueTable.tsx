@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { newKeyValue } from '@core/factory'
+import { rowsToText, textToRows } from '@core/bulk'
 import type { KeyValue } from '@core/types'
 
 interface Props<T extends KeyValue> {
@@ -25,15 +27,42 @@ export function KeyValueTable<T extends KeyValue>({
   renderValue,
   renderExtra
 }: Props<T>): React.JSX.Element {
+  // Bulk edit (rows as `key: value` text) only for plain tables; custom cells (files, secrets) need the grid.
+  const canBulk = !renderValue && !renderExtra
+  const [bulkText, setBulkText] = useState<string | null>(null)
   const ghost = make()
   const all = [...rows, ghost]
+
+  if (canBulk && bulkText !== null) {
+    return (
+      <div className="kv-wrap">
+        <div className="kv-toolbar">
+          <span className="muted small">One per line as <code>key: value</code>. Start a line with <code>//</code> to disable it.</span>
+          <button className="btn small ghost" onClick={() => setBulkText(null)}>
+            Key-value edit
+          </button>
+        </div>
+        <textarea
+          className="bulk-text"
+          value={bulkText}
+          spellCheck={false}
+          autoFocus
+          placeholder={`${keyPlaceholder}: ${valuePlaceholder}`}
+          onChange={(e) => {
+            setBulkText(e.target.value)
+            onChange(textToRows(e.target.value, rows) as T[])
+          }}
+        />
+      </div>
+    )
+  }
 
   const update = (id: string, patch: Partial<T>): void => {
     if (id === ghost.id) onChange([...rows, { ...ghost, ...patch }])
     else onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   }
 
-  return (
+  const table = (
     <table className="kv">
       <thead>
         <tr>
@@ -76,5 +105,17 @@ export function KeyValueTable<T extends KeyValue>({
         })}
       </tbody>
     </table>
+  )
+  if (!canBulk) return table
+  return (
+    <div className="kv-wrap">
+      <div className="kv-toolbar">
+        <span className="spacer" />
+        <button className="btn small ghost" onClick={() => setBulkText(rowsToText(rows))} title="Edit as text: paste headers or params in bulk">
+          Bulk edit
+        </button>
+      </div>
+      {table}
+    </div>
   )
 }

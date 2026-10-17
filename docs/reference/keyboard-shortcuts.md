@@ -6,6 +6,7 @@ On Windows and Linux use **Ctrl** where macOS uses **⌘**.
 
 | Shortcut | Action |
 |---|---|
+| **⌘K** or **⌘P** | Open the [command palette](../command-palette.md) |
 | **⌘T** | New request tab |
 | **⌘↵** | Send the active request |
 | **⌘S** | Save the active request |

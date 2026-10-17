@@ -63,7 +63,7 @@ optionally a folder. Saved requests appear in the sidebar; edits show a dot on t
 
 | Area | What it does |
 |---|---|
-| **Top bar** | New tab, Import, the cookie manager, Settings (proxy and certificates), and the active environment picker with its eye button for editing it |
+| **Top bar** | New tab, Import, the [command palette](command-palette.md) (**⌘K**), the theme switch, the cookie manager, Settings, and the active environment picker with its eye button for editing it |
 | **Sidebar rail** | Switch between **Collections**, **Environments**, **History** and **Monitors** |
 | **Tab bar** | Open requests. A dot means unsaved changes; middle-click closes a tab |
 | **Request editor** | Protocol, method and URL, then tabs for Params, Authorization, Headers, Body, Scripts, Settings, Examples and Docs |
@@ -71,6 +71,8 @@ optionally a folder. Saved requests appear in the sidebar; edits show a dot on t
 | **Console** (bottom) | Every request sent, plus `console.log` output and errors from scripts |
 
 ## Next steps
+
+- Press **⌘K** to jump to any request, environment or command — see [Command palette and themes](command-palette.md).
 
 - Use [variables and environments](variables.md) so the same request works against dev, staging and production.
 - Add [tests](scripting.md) and run a whole collection with the [collection runner](collection-runner.md).

@@ -132,6 +132,15 @@ export function SettingsModal({ close }: { close(): void }): React.JSX.Element {
 
   return (
     <Frame title="Settings" close={close}>
+      <div className="section-title">Appearance</div>
+      <div className="seg theme-seg">
+        {(['system', 'light', 'dark'] as const).map((t) => (
+          <button key={t} className={s.themePref === t ? 'active' : ''} onClick={() => s.setThemePref(t)}>
+            {t === 'system' ? 'System' : t === 'light' ? 'Light' : 'Dark'}
+          </button>
+        ))}
+      </div>
+
       <div className="section-title">Proxy</div>
       <label className="check">
         <input type="checkbox" checked={proxy.enabled} onChange={(e) => s.updateNetwork({ proxy: { ...proxy, enabled: e.target.checked } })} />

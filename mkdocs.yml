@@ -45,6 +45,7 @@ nav:
   - Home: README.md
   - User guide:
       - Getting started: getting-started.md
+      - Command palette and themes: command-palette.md
       - Sending requests: requests.md
       - Collections and folders: collections.md
       - Variables and environments: variables.md

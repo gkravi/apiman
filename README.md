@@ -24,6 +24,11 @@
 
 ## Features
 
+**Fast to use**
+- **⌘K command palette**: fuzzy-jump to any request, tab, environment, history entry or command
+- Light, dark and system themes; keyboard shortcuts throughout
+- Bulk-edit params and headers as text; filter JSON responses with JSONPath
+
 **Build requests**
 - Every HTTP method and body type: JSON, XML, text, form-data with file uploads, URL-encoded, binary, GraphQL
 - `{{variables}}` with environments, collection variables, globals and [dynamic values](docs/reference/dynamic-variables.md)

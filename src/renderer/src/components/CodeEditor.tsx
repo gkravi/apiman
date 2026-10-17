@@ -7,6 +7,7 @@ import { EditorView } from '@codemirror/view'
 import { useMemo } from 'react'
 import { graphql } from 'cm6-graphql'
 import type { GraphQLSchema } from 'graphql'
+import { useStore } from '../store'
 
 export type EditorLanguage = 'json' | 'xml' | 'html' | 'javascript' | 'text' | 'python' | 'shell' | 'graphql'
 
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export function CodeEditor({ value, onChange, language = 'text', readOnly, wrap, placeholder, height = '100%', schema }: Props): React.JSX.Element {
+  const theme = useStore((s) => s.theme)
   const extensions = useMemo(() => {
     const ext = []
     if (language === 'json') ext.push(json())
@@ -39,7 +41,7 @@ export function CodeEditor({ value, onChange, language = 'text', readOnly, wrap,
       className="code-editor"
       value={value}
       onChange={onChange}
-      theme="dark"
+      theme={theme}
       height={height}
       extensions={extensions}
       readOnly={readOnly}

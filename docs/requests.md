@@ -16,9 +16,18 @@ the table rewrites the URL.
 **Paste a cURL command** into the URL bar to import it: method, URL, headers, body, `-u` basic auth,
 `-k` (skip TLS verification) and `-L` (follow redirects) are all understood.
 
+### Bulk edit
+
+Click **Bulk edit** above the Params, Headers or URL-encoded body table to edit it as text, one
+`key: value` per line (`key=value` works too). Start a line with `//` (or `#`) to keep it but disable
+it. It's the quickest way to paste a block of headers copied from browser dev tools. Edits apply as
+you type; **Key-value edit** switches back.
+
+![Bulk edit](images/bulk-edit.png)
+
 ## Headers
 
-Add headers in the **Headers** table; untick to disable one temporarily. When you don't set them,
+Add headers in the **Headers** table (or [bulk edit](#bulk-edit) them); untick to disable one temporarily. When you don't set them,
 ApiMan adds:
 
 | Header | Value |
@@ -69,6 +78,28 @@ leaked to the new host.
 | **Timeline** | DNS, TCP connect, TLS handshake, time to first byte and download, plus the redirect chain |
 
 The status line shows the status code (coloured by class), total time (hover for the breakdown) and size.
+
+### Filtering JSON responses
+
+For JSON responses, a filter box sits above the body. Type a [JSONPath](https://goessner.net/articles/JsonPath/)
+expression and the body shows only what matches, with a match count:
+
+![Response filter](images/response-filter.png)
+
+| Filter | Shows |
+|---|---|
+| `$.data[*].email` | Every user's email |
+| `$..id` | Every `id`, at any depth |
+| `$.items[?(@.price < 10)].name` | Names of items under 10 |
+| `$.items[?(@.tags && @.status == 'live')]` | Items with tags that are live |
+| `$.users[?(@.name =~ /^a/i)]` | Users whose name starts with "a" |
+| `$.data[0]`, `$.data[-1]`, `$.data[:3]` | First, last, first three |
+| `.data[0].name` | jq-style paths work too |
+
+Filters support names, `['quoted names']`, indexes (negative from the end), `*`, `..` (any depth),
+unions `[0,2]`, slices `[start:end:step]`, and `?()` filters with `==` `!=` `<` `<=` `>` `>=`,
+`=~ /regex/`, `&&`, `||` and `!`. A mistake shows what's wrong (e.g. "Unclosed [") instead of a result.
+The filter stays in place when you send the request again, so you can keep watching one field.
 
 Response tools:
 

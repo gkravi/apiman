@@ -10,6 +10,7 @@ HTTP, GraphQL, WebSocket, Server-Sent Events and gRPC, and runs on macOS, Window
 | Page | What it covers |
 |---|---|
 | [Getting started](getting-started.md) | Install, first request, the window at a glance |
+| [Command palette and themes](command-palette.md) | ⌘K to jump anywhere; light, dark and system themes |
 | [Sending requests](requests.md) | URL and params, headers, bodies, settings, responses, code snippets |
 | [Collections and folders](collections.md) | Organising requests, inheritance, history, tabs |
 | [Variables and environments](variables.md) | `{{variables}}`, scopes, environments, globals, dynamic values, secrets |

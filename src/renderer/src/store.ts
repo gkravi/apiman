@@ -32,6 +32,7 @@ import type {
 } from '@core/types'
 import { DEFAULT_NETWORK } from '@core/types'
 import type { MockLogEntry } from '@core/mockRoutes'
+import { applyTheme, loadThemePref, resolveTheme, saveThemePref, type Theme, type ThemePref } from './theme'
 
 const HISTORY_LIMIT = 200
 const CONSOLE_LIMIT = 1000
@@ -119,6 +120,9 @@ interface State {
   toast: string | null
   console: ConsoleEntry[]
   consoleOpen: boolean
+  themePref: ThemePref
+  theme: Theme
+  paletteOpen: boolean
   runner: RunnerState | null
   /** GraphQL schemas by tab id (in memory only; refetched per session). */
   schemas: Record<string, SchemaState>
@@ -132,6 +136,10 @@ interface State {
   openModal(m: Modal | null): void
   showToast(msg: string): void
   toggleConsole(open?: boolean): void
+  setThemePref(pref: ThemePref): void
+  /** Re-resolve 'system' after the OS theme changes. */
+  syncTheme(): void
+  togglePalette(open?: boolean): void
   clearConsole(): void
 
   // tabs
@@ -317,6 +325,9 @@ export const useStore = create<State>((set, get) => {
     toast: null,
     console: [],
     consoleOpen: false,
+    themePref: loadThemePref(),
+    theme: resolveTheme(loadThemePref()),
+    paletteOpen: false,
     runner: null,
     schemas: {},
     grpc: {},
@@ -351,6 +362,18 @@ export const useStore = create<State>((set, get) => {
     },
 
     toggleConsole: (open) => set((s) => ({ consoleOpen: open ?? !s.consoleOpen })),
+    setThemePref(themePref) {
+      saveThemePref(themePref)
+      const theme = resolveTheme(themePref)
+      applyTheme(theme)
+      set({ themePref, theme })
+    },
+    syncTheme() {
+      const theme = resolveTheme(get().themePref)
+      applyTheme(theme)
+      set({ theme })
+    },
+    togglePalette: (open) => set((s) => ({ paletteOpen: open ?? !s.paletteOpen })),
     clearConsole: () => set({ console: [] }),
 
     newTab(req) {
