@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://github.com/gkravi/apiman/releases/latest"><b>Download</b></a> ·
   <a href="docs/getting-started.md">Getting started</a> ·
-  <a href="docs/README.md">Documentation</a> ·
+  <a href="https://gkravi.github.io/apiman/">Documentation</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
@@ -93,7 +93,7 @@ Requires Node.js 20+. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full develo
 
 ## Documentation
 
-The [documentation](docs/README.md) covers every feature, plus references for the
+The [documentation website](https://gkravi.github.io/apiman/) (also browsable [here on GitHub](docs/README.md)) covers every feature, plus references for the
 [scripting API](docs/reference/scripting-api.md), [CLI options](docs/reference/cli-options.md) and
 [keyboard shortcuts](docs/reference/keyboard-shortcuts.md).
 
