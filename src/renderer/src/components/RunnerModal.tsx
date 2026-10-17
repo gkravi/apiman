@@ -4,7 +4,7 @@ import { parseDataFile } from '@core/varsync'
 import type { RunnerRequestResult, VarMap } from '@core/types'
 import { useStore } from '../store'
 import { MethodBadge } from './MethodBadge'
-import { formatBytes } from './ResponseViewer'
+import { formatBytes } from '../format'
 
 function ResultRow({ r }: { r: RunnerRequestResult }): React.JSX.Element {
   const [open, setOpen] = useState(false)

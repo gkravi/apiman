@@ -94,9 +94,26 @@ describe('sandbox', () => {
   it('stops infinite loops and blocks host access', async () => {
     const loop = await runScript('while (true) {}', ctx(), { timeoutMs: 200 })
     expect(loop.error).toMatch(/timed out/)
-    const host = await runScript(`pm.test('no require', () => pm.expect(typeof require).to.equal('undefined'));
+    const host = await runScript(`pm.test('no node modules', () => ['fs', 'child_process', 'net', 'crypto'].forEach((m) => pm.expect(() => require(m)).to.throw('Cannot find module')));
       pm.test('no process', () => pm.expect(typeof process).to.equal('undefined'));`, ctx())
     expect(host.tests.every((t) => t.passed)).toBe(true)
+  })
+
+  it('provides CryptoJS, lodash, uuid and a secure crypto.getRandomValues via require()', async () => {
+  const out = await runScript(`
+    const CJ = require('crypto-js');
+    pm.test('hmac', () => pm.expect(CryptoJS.HmacSHA256('msg', 'key').toString()).to.equal('2d93cbc1be167bcb1637a4a23cbff01a7878f0c50ee833954ea5221bb1b8c628'));
+    pm.test('md5', () => pm.expect(CJ.MD5('hello').toString()).to.equal('5d41402abc4b2a76b9719d911017c592'));
+    pm.test('b64', () => pm.expect(CJ.enc.Base64.stringify(CJ.enc.Utf8.parse('hi'))).to.equal('aGk='));
+    pm.test('aes roundtrip', () => { const c = CJ.AES.encrypt('secret', 'pass').toString(); pm.expect(CJ.AES.decrypt(c, 'pass').toString(CJ.enc.Utf8)).to.equal('secret'); });
+    pm.test('lodash', () => pm.expect(_.chunk([1,2,3,4,5], 2)).to.eql([[1,2],[3,4],[5]]));
+    pm.test('lodash require', () => pm.expect(require('lodash').get({a:{b:[1,{c:9}]}}, 'a.b[1].c')).to.equal(9));
+    pm.test('uuid', () => pm.expect(require('uuid').v4()).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/));
+    pm.test('missing', () => pm.expect(() => require('fs')).to.throw('Cannot find module'));
+  `, ctx())
+    expect(out.error).toBeUndefined()
+    expect(out.tests.filter((t) => !t.passed)).toEqual([])
+    expect(out.tests).toHaveLength(8)
   })
 
   it('supports async tests with promises', async () => {

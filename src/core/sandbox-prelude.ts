@@ -11,9 +11,13 @@ export const PRELUDE = String.raw`
   var S = globalThis.__state;
   var hostLog = globalThis.__host_log;
   var hostSend = globalThis.__host_send;
+  var hostRequire = globalThis.__host_require;
+  var hostRandom = globalThis.__host_random;
   delete globalThis.__state;
   delete globalThis.__host_log;
   delete globalThis.__host_send;
+  delete globalThis.__host_require;
+  delete globalThis.__host_random;
 
   var tests = [];
   var control = { nextRequestSet: false, nextRequest: null, skip: false };
@@ -85,6 +89,51 @@ export const PRELUDE = String.raw`
     }
     return out;
   };
+
+  // ---------- crypto.getRandomValues (backed by the host's CSPRNG) ----------
+  function randomByteArray(n) {
+    var hex = hostRandom(n), out = [];
+    for (var i = 0; i < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
+    return out;
+  }
+  function uuidv4() {
+    var b = randomByteArray(16), h = [];
+    b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    for (var i = 0; i < 16; i++) h.push((b[i] + 256).toString(16).slice(1));
+    return h.slice(0, 4).join('') + '-' + h.slice(4, 6).join('') + '-' + h.slice(6, 8).join('') + '-' + h.slice(8, 10).join('') + '-' + h.slice(10).join('');
+  }
+  globalThis.crypto = {
+    getRandomValues: function (arr) {
+      var bytes = randomByteArray(arr.length * (arr.BYTES_PER_ELEMENT || 1));
+      var view = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+      for (var i = 0; i < view.length; i++) view[i] = bytes[i];
+      return arr;
+    },
+    randomUUID: uuidv4
+  };
+
+  // ---------- require() ----------
+  var modules = {};
+  var BUILTIN = {
+    uuid: function () { return { v4: uuidv4 }; },
+    atob: function () { return globalThis.atob; },
+    btoa: function () { return globalThis.btoa; }
+  };
+  function sandboxRequire(name) {
+    name = String(name);
+    if (modules[name]) return modules[name].exports;
+    if (BUILTIN[name]) { modules[name] = { exports: BUILTIN[name]() }; return modules[name].exports; }
+    var src = hostRequire(name);
+    if (src === undefined) throw new Error("Cannot find module '" + name + "'. Available: crypto-js, lodash, uuid, atob, btoa");
+    var module = { exports: {} };
+    modules[name] = module;
+    // Hide require/define so UMD bundles take their CommonJS branch, and the sandbox has no 'crypto' module.
+    (new Function('module', 'exports', 'require', 'define', src))(module, module.exports, function (n) { if (n === 'crypto') throw new Error('no crypto module'); return sandboxRequire(n); }, undefined);
+    return module.exports;
+  }
+  globalThis.require = sandboxRequire;
+  Object.defineProperty(globalThis, 'CryptoJS', { configurable: true, get: function () { return sandboxRequire('crypto-js'); } });
+  Object.defineProperty(globalThis, '_', { configurable: true, get: function () { return sandboxRequire('lodash'); } });
 
   // ---------- assertions (chai-style subset) ----------
   function AssertionError(message) { this.name = 'AssertionError'; this.message = message; }
@@ -429,6 +478,13 @@ export const PRELUDE = String.raw`
     },
     request: request,
     response: S.response ? makeResponse(S.response) : undefined,
+    cookies: {
+      get: function (n) { for (var i = 0; i < S.cookies.length; i++) if (S.cookies[i].name === n) return S.cookies[i].value; return undefined; },
+      has: function (n) { return S.cookies.some(function (c) { return c.name === n; }); },
+      toObject: function () { var o = {}; S.cookies.forEach(function (c) { o[c.name] = c.value; }); return o; },
+      all: function () { return S.cookies.map(function (c) { return { name: c.name, value: c.value }; }); },
+      count: function () { return S.cookies.length; }
+    },
     test: test,
     expect: expect,
     sendRequest: sendRequest,

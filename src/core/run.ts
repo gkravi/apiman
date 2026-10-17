@@ -2,7 +2,8 @@
 // and the collection runner built on it. Shared by the Electron main process and a future CLI.
 
 import { newKeyValue } from './factory'
-import { execute } from './executor'
+import { CookieJar } from './cookies'
+import { execute, type ExecuteOptions } from './executor'
 import { prepareRequest } from './prepare'
 import { normalizeUrl } from './url'
 import { runScript, type SandboxRequest, type SandboxResponse, type ScriptContext, type SendRequestFn } from './sandbox'
@@ -12,6 +13,8 @@ import {
   type ApiRequest,
   type ApiResponse,
   type ConsoleEntry,
+  type Cookie,
+  type NetworkSettings,
   type PreparedRequest,
   type RunnerOptions,
   type RunnerRequestResult,
@@ -61,7 +64,7 @@ export function toSandboxResponse(res: ApiResponse): SandboxResponse {
 }
 
 /** pm.sendRequest: accepts a URL string or a Postman-style request object. */
-function makeSendRequest(signal: AbortSignal): SendRequestFn {
+function makeSendRequest(signal: AbortSignal, execOpts: ExecuteOptions): SendRequestFn {
   return async (raw) => {
     const spec = raw as {
       url?: string
@@ -84,7 +87,8 @@ function makeSendRequest(signal: AbortSignal): SendRequestFn {
     }
     const result = await execute(
       { method: (spec.method ?? 'GET').toUpperCase() as PreparedRequest['method'], url: normalizeUrl(spec.url), headers, body, settings: DEFAULT_SETTINGS },
-      signal
+      signal,
+      execOpts
     )
     return result.ok ? { response: toSandboxResponse(result.response) } : { error: result.error }
   }
@@ -96,11 +100,22 @@ export async function runRequest(input: RunRequestInput, signal: AbortSignal = n
   const tests: TestResult[] = []
   const consoleLog: ConsoleEntry[] = []
   let nextRequest: string | null | undefined
-  const sendRequest = makeSendRequest(signal)
+  const jar = new CookieJar(input.cookies ?? [])
+  const execOpts: ExecuteOptions = { jar, network: input.network }
+  const sendRequest = makeSendRequest(signal, execOpts)
+  const cookiesFor = (url: string): { name: string; value: string }[] => {
+    try {
+      return jar.matching(new URL(url)).map((c) => ({ name: c.name, value: c.value }))
+    } catch {
+      return []
+    }
+  }
+  let responseUrl = ''
   const tag = (entries: ConsoleEntry[]): ConsoleEntry[] => entries.map((e) => ({ ...e, source: input.info.requestName }))
 
   const run = async (event: ScriptContext['event'], code: string, response?: SandboxResponse): Promise<string | undefined> => {
-    const out = await runScript(code, { event, variables, request: toSandboxRequest(request), response, info: input.info }, { sendRequest })
+    const cookies = cookiesFor(responseUrl || request.url)
+    const out = await runScript(code, { event, variables, request: toSandboxRequest(request), response, cookies, info: input.info }, { sendRequest })
     variables = out.variables
     if (event === 'prerequest') request = applySandboxRequest(request, out.request)
     tests.push(...out.tests)
@@ -110,7 +125,7 @@ export async function runRequest(input: RunRequestInput, signal: AbortSignal = n
     return out.error
   }
 
-  const done = (extra: Partial<RunRequestResult>): RunRequestResult => ({ tests, console: consoleLog, variables, nextRequest, ...extra })
+  const done = (extra: Partial<RunRequestResult>): RunRequestResult => ({ tests, console: consoleLog, variables, nextRequest, cookies: jar.toJSON(), ...extra })
 
   for (const code of input.preRequestScripts) {
     const err = await run('prerequest', code)
@@ -128,11 +143,12 @@ export async function runRequest(input: RunRequestInput, signal: AbortSignal = n
     return done({ result: { ok: false, error: (e as Error).message } })
   }
 
-  const result = await execute(prepared, signal)
+  const result = await execute(prepared, signal, execOpts)
   const sent = { method: prepared.method, url: prepared.url, headers: prepared.headers }
   if (!result.ok) return done({ result, sent })
 
   let scriptError: string | undefined
+  responseUrl = result.response.url
   const response = toSandboxResponse(result.response)
   for (const code of input.testScripts) {
     const err = await run('test', code, response)
@@ -150,6 +166,9 @@ export async function runRequest(input: RunRequestInput, signal: AbortSignal = n
 export interface RunnerHooks {
   onResult?(r: RunnerRequestResult): void
   signal?: AbortSignal
+  /** Starting cookie jar (the final jar is returned) and proxy/certificate settings. */
+  cookies?: Cookie[]
+  network?: NetworkSettings
 }
 
 /** Per-iteration guard against pm.execution.setNextRequest loops that never end. */
@@ -167,10 +186,11 @@ export async function runCollection(
   initial: Pick<RunVariables, 'environment' | 'collection' | 'globals'>,
   options: RunnerOptions,
   hooks: RunnerHooks = {}
-): Promise<{ summary: RunnerSummary; variables: Pick<RunVariables, 'environment' | 'collection' | 'globals'> }> {
+): Promise<{ summary: RunnerSummary; variables: Pick<RunVariables, 'environment' | 'collection' | 'globals'>; cookies: Cookie[] }> {
   const signal = hooks.signal ?? new AbortController().signal
   const started = performance.now()
   let vars = structuredClone(initial)
+  let cookies = hooks.cookies ?? []
   const iterations = Math.max(1, options.iterations || options.data.length || 1)
   const summary: RunnerSummary = { iterations: 0, requests: 0, testsPassed: 0, testsFailed: 0, errors: 0, durationMs: 0, aborted: false }
   let stopRun = false
@@ -195,11 +215,14 @@ export async function runCollection(
         {
           ...step,
           variables: { ...vars, local: {}, data },
+          cookies,
+          network: hooks.network,
           info: { requestName: step.request.name, requestId: step.request.id, iteration: it, iterationCount: iterations }
         },
         signal
       )
       vars = { environment: r.variables.environment, collection: r.variables.collection, globals: r.variables.globals }
+      cookies = r.cookies
 
       const res = r.result?.ok ? r.result.response : undefined
       const error = r.result && !r.result.ok ? r.result.error : r.result ? undefined : r.scriptError
@@ -243,5 +266,5 @@ export async function runCollection(
   }
 
   summary.durationMs = Math.round(performance.now() - started)
-  return { summary, variables: vars }
+  return { summary, variables: vars, cookies }
 }

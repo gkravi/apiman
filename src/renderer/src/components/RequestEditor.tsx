@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { newKeyValue, uid } from '@core/factory'
 import { parseCurl } from '@core/curl'
-import { paramsFromUrl, urlWithParams } from '@core/url'
-import { resolve, unresolvedVariables } from '@core/variables'
+import { normalizeUrl, paramsFromUrl, urlWithParams } from '@core/url'
+import { resolve, unresolvedVariables, type Scope } from '@core/variables'
+import { OAuth2Fields } from './OAuth2Fields'
 import { effectiveAuth } from '@core/prepare'
 import { locate, parentAuths } from '@core/tree'
-import { HTTP_METHODS, type Auth, type AuthType, type BodyMode, type FormField, type HttpMethod, type RawLanguage, type RequestBody } from '@core/types'
+import { DEFAULT_OAUTH2, HTTP_METHODS, type Auth, type AuthType, type BodyMode, type FormField, type HttpMethod, type RawLanguage, type RequestBody } from '@core/types'
 import { scopesFor, useStore, type Tab } from '../store'
 import { KeyValueTable } from './KeyValueTable'
 import { CodeEditor } from './CodeEditor'
@@ -75,6 +76,20 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
           </span>
         </div>
         <div className="header-actions">
+          <button
+            className="btn ghost"
+            onClick={() => {
+              let domain: string | undefined
+              try {
+                domain = new URL(normalizeUrl(resolve(r.url, scopes))).hostname
+              } catch {
+                /* incomplete URL */
+              }
+              s.openModal({ kind: 'cookies', domain })
+            }}
+          >
+            Cookies
+          </button>
           <button className="btn ghost" onClick={() => s.openModal({ kind: 'code', tabId: tab.id })} title="Generate code snippet">
             {'</>'} Code
           </button>
@@ -143,7 +158,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
             <div className="hint">Content-Type, User-Agent, Accept and Accept-Encoding are added automatically when not set.</div>
           </>
         )}
-        {section === 'auth' && <AuthEditor auth={r.auth} onChange={(auth) => update({ auth })} inherited={loc ? effectiveAuth({ type: 'inherit' }, parentAuths(loc)) : undefined} />}
+        {section === 'auth' && <AuthEditor auth={r.auth} onChange={(auth) => update({ auth })} inherited={loc ? effectiveAuth({ type: 'inherit' }, parentAuths(loc)) : undefined} scopes={scopes} />}
         {section === 'body' && <BodyEditor body={r.body} onChange={(body) => update({ body })} />}
         {section === 'scripts' && <ScriptsEditor scripts={r.scripts} onChange={(scripts) => update({ scripts })} scopeLabel="request" />}
         {section === 'settings' && (
@@ -176,10 +191,27 @@ const AUTH_LABELS: Record<AuthType, string> = {
   none: 'No Auth',
   basic: 'Basic Auth',
   bearer: 'Bearer Token',
-  apikey: 'API Key'
+  apikey: 'API Key',
+  digest: 'Digest Auth',
+  awsv4: 'AWS Signature',
+  oauth2: 'OAuth 2.0'
 }
 
-export function AuthEditor({ auth, onChange, inherited, allowInherit = true }: { auth: Auth; onChange(a: Auth): void; inherited?: Auth; allowInherit?: boolean }): React.JSX.Element {
+export function AuthEditor({
+  auth,
+  onChange,
+  inherited,
+  allowInherit = true,
+  scopes
+}: {
+  auth: Auth
+  onChange(a: Auth): void
+  inherited?: Auth
+  allowInherit?: boolean
+  /** Variables used to resolve OAuth 2.0 settings; defaults to environment + globals. */
+  scopes?: Scope[]
+}): React.JSX.Element {
+  const ws = useStore((st) => st.workspace)
   const setType = (type: AuthType): void => {
     switch (type) {
       case 'inherit':
@@ -191,8 +223,20 @@ export function AuthEditor({ auth, onChange, inherited, allowInherit = true }: {
         return onChange({ type, token: '' })
       case 'apikey':
         return onChange({ type, key: '', value: '', in: 'header' })
+      case 'digest':
+        return onChange({ type, username: '', password: '' })
+      case 'awsv4':
+        return onChange({ type, accessKey: '', secretKey: '', sessionToken: '', region: 'us-east-1', service: '' })
+      case 'oauth2':
+        return onChange({ type, ...DEFAULT_OAUTH2 })
     }
   }
+  const field = <A extends Auth>(a: A, k: keyof A & string, label: string, opts: { type?: string; placeholder?: string } = {}): React.JSX.Element => (
+    <label className="field" key={k}>
+      {label}
+      <input type={opts.type ?? 'text'} placeholder={opts.placeholder} value={String(a[k] ?? '')} onChange={(e) => onChange({ ...a, [k]: e.target.value })} />
+    </label>
+  )
   return (
     <div className="auth-editor">
       <label className="field">
@@ -226,6 +270,29 @@ export function AuthEditor({ auth, onChange, inherited, allowInherit = true }: {
               <input type="password" value={auth.password} onChange={(e) => onChange({ ...auth, password: e.target.value })} />
             </label>
           </>
+        )}
+        {auth.type === 'digest' && (
+          <>
+            {field(auth, 'username', 'Username')}
+            {field(auth, 'password', 'Password', { type: 'password' })}
+            <p className="hint">The first request gets the server&apos;s challenge; ApiMan answers it automatically (MD5, MD5-sess, SHA-256).</p>
+          </>
+        )}
+        {auth.type === 'awsv4' && (
+          <>
+            {field(auth, 'accessKey', 'Access Key', { placeholder: '{{aws_access_key_id}}' })}
+            {field(auth, 'secretKey', 'Secret Key', { type: 'password', placeholder: '{{aws_secret_access_key}}' })}
+            {field(auth, 'region', 'AWS Region', { placeholder: 'us-east-1' })}
+            {field(auth, 'service', 'Service Name', { placeholder: 'execute-api, s3, …' })}
+            {field(auth, 'sessionToken', 'Session Token (optional)', { type: 'password' })}
+          </>
+        )}
+        {auth.type === 'oauth2' && (
+          <OAuth2Fields
+            cfg={auth}
+            onChange={(cfg) => onChange({ type: 'oauth2', ...cfg })}
+            scopes={scopes ?? [ws.environments.find((e) => e.id === ws.activeEnvironmentId)?.variables ?? [], ws.globals]}
+          />
         )}
         {auth.type === 'bearer' && (
           <label className="field">

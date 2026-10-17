@@ -28,6 +28,10 @@
     "src/core/run.ts",
     "src/core/sandbox.ts",
     "src/core/sandbox-prelude.ts",
+    "src/core/awsv4.ts",
+    "src/core/digest.ts",
+    "src/core/oauth2.ts",
+    "src/core/sandbox-libs.ts",
     "src/core/**/*.test.ts"
   ]
 }

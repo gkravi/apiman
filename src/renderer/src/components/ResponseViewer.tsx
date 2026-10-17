@@ -3,17 +3,13 @@ import type { ApiResponse } from '@core/types'
 import { useStore, type Tab } from '../store'
 import type { TestResult } from '@core/types'
 import { CodeEditor, type EditorLanguage } from './CodeEditor'
+import { formatBytes } from '../format'
 
 type View = 'body' | 'headers' | 'cookies' | 'tests' | 'timeline'
 type BodyView = 'pretty' | 'raw' | 'preview'
 
 const header = (res: ApiResponse, name: string): string | undefined => res.headers.find(([k]) => k.toLowerCase() === name)?.[1]
 
-export function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(2)} KB`
-  return `${(n / 1024 / 1024).toFixed(2)} MB`
-}
 
 const formatMs = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`)
 

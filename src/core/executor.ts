@@ -7,7 +7,12 @@ import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import zlib from 'node:zlib'
-import type { ApiResponse, ExecuteResult, PreparedBody, PreparedRequest, Timings } from './types'
+import net from 'node:net'
+import tls from 'node:tls'
+import { CookieJar } from './cookies'
+import { digestAuthorization } from './digest'
+import { signAwsV4 } from './awsv4'
+import type { ApiResponse, ExecuteResult, NetworkSettings, PreparedBody, PreparedRequest, Timings } from './types'
 
 const USER_AGENT = 'ApiMan/0.1'
 const MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -75,40 +80,89 @@ interface Hop {
   timings: Omit<Timings, 'total'>
 }
 
-function sendOnce(
-  method: string,
-  url: URL,
-  headers: [string, string][],
-  data: Buffer | undefined,
-  verifySsl: boolean,
-  timeoutMs: number,
-  signal: AbortSignal
-): Promise<Hop> {
-  return new Promise((resolvePromise, reject) => {
-    const lib = url.protocol === 'https:' ? https : http
-    const start = performance.now()
-    const t: Omit<Timings, 'total'> = {}
-    const elapsed = (): number => Math.round((performance.now() - start) * 10) / 10
+/** Per-hop connection details: TLS material for the target host and an optional proxy. */
+interface Transport {
+  verifySsl: boolean
+  timeoutMs: number
+  tls: Pick<tls.ConnectionOptions, 'ca' | 'cert' | 'key' | 'pfx' | 'passphrase'>
+  proxy?: URL
+}
 
+const proxyAuthHeader = (proxy: URL): [string, string][] =>
+  proxy.username ? [['Proxy-Authorization', `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')}`]] : []
+
+/** Open a CONNECT tunnel through an HTTP proxy for an https:// target. */
+function connectTunnel(proxy: URL, target: URL, timeoutMs: number, signal: AbortSignal): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    const port = target.port || '443'
+    const req = http.request({
+      host: proxy.hostname,
+      port: proxy.port || 80,
+      method: 'CONNECT',
+      path: `${target.hostname}:${port}`,
+      headers: Object.fromEntries([['Host', `${target.hostname}:${port}`], ...proxyAuthHeader(proxy)]),
+      signal
+    })
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`Proxy CONNECT timed out after ${timeoutMs} ms`)))
+    req.on('connect', (res, socket) => {
+      if (res.statusCode === 200) resolve(socket)
+      else {
+        socket.destroy()
+        reject(new Error(`Proxy refused tunnel: ${res.statusCode} ${res.statusMessage ?? ''}`.trim()))
+      }
+    })
+    req.on('error', (e) => reject(new Error(`Proxy error: ${e.message}`)))
+    req.end()
+  })
+}
+
+async function sendOnce(method: string, url: URL, headers: [string, string][], data: Buffer | undefined, tr: Transport, signal: AbortSignal): Promise<Hop> {
+  const start = performance.now()
+  const t: Omit<Timings, 'total'> = {}
+  const elapsed = (): number => Math.round((performance.now() - start) * 10) / 10
+  const isHttps = url.protocol === 'https:'
+
+  let tunnel: net.Socket | undefined
+  if (tr.proxy && isHttps) {
+    tunnel = await connectTunnel(tr.proxy, url, tr.timeoutMs, signal)
+    t.connect = elapsed()
+  }
+
+  return new Promise((resolvePromise, reject) => {
     const outHeaders: Record<string, string | string[]> = {}
-    for (const [k, v] of headers) {
+    const all = tr.proxy && !isHttps ? [...headers, ...proxyAuthHeader(tr.proxy)] : headers
+    for (const [k, v] of all) {
       const existing = outHeaders[k]
       outHeaders[k] = existing === undefined ? v : ([] as string[]).concat(existing, v)
     }
 
-    const req = lib.request(url, {
+    const options: https.RequestOptions = {
       method,
       headers: outHeaders,
-      rejectUnauthorized: verifySsl,
+      rejectUnauthorized: tr.verifySsl,
+      ...tr.tls,
       agent: false, // fresh socket per request so connect/TLS timings are real
       signal
-    })
+    }
+    let req: http.ClientRequest
+    if (tr.proxy && !isHttps) {
+      // Plain HTTP through a proxy: send the absolute URL to the proxy itself.
+      req = http.request({ ...options, host: tr.proxy.hostname, port: tr.proxy.port || 80, path: url.toString(), headers: { Host: url.host, ...outHeaders } })
+    } else if (tunnel) {
+      const socket = tunnel
+      req = https.request(url, {
+        ...options,
+        createConnection: () => tls.connect({ socket, servername: url.hostname, rejectUnauthorized: tr.verifySsl, ...tr.tls })
+      })
+    } else {
+      req = (isHttps ? https : http).request(url, options)
+    }
 
-    req.setTimeout(timeoutMs, () => req.destroy(new Error(`Request timed out after ${timeoutMs} ms`)))
+    req.setTimeout(tr.timeoutMs, () => req.destroy(new Error(`Request timed out after ${tr.timeoutMs} ms`)))
 
     req.on('socket', (socket) => {
       socket.once('lookup', () => (t.dns = elapsed()))
-      socket.once('connect', () => (t.connect = elapsed()))
+      socket.once('connect', () => (t.connect ??= elapsed()))
       socket.once('secureConnect', () => (t.tls = elapsed()))
     })
 
@@ -146,6 +200,52 @@ function sendOnce(
   })
 }
 
+// ---------- network settings ----------
+
+function hostMatches(pattern: string, url: URL): boolean {
+  const p = pattern.trim().toLowerCase()
+  if (!p) return false
+  const [host, port] = p.split(':')
+  if (port && port !== (url.port || (url.protocol === 'https:' ? '443' : '80'))) return false
+  const h = url.hostname.toLowerCase()
+  if (host === '*') return true
+  if (host.startsWith('*.')) return h.endsWith(host.slice(1)) || h === host.slice(2)
+  if (host.startsWith('.')) return h.endsWith(host) || h === host.slice(1)
+  return h === host
+}
+
+export function proxyFor(url: URL, network?: NetworkSettings): URL | undefined {
+  const proxy = network?.proxy
+  if (!proxy?.enabled || !proxy.url.trim()) return undefined
+  if (proxy.bypass.split(',').some((b) => hostMatches(b, url))) return undefined
+  return new URL(/^[a-z]+:\/\//i.test(proxy.url) ? proxy.url : `http://${proxy.url}`)
+}
+
+const fileCache = new Map<string, Buffer>()
+async function readCached(path: string): Promise<Buffer> {
+  // Cert files rarely change; re-read only when the app restarts.
+  let b = fileCache.get(path)
+  if (!b) {
+    b = await readFile(path)
+    fileCache.set(path, b)
+  }
+  return b
+}
+
+async function tlsFor(url: URL, network?: NetworkSettings): Promise<Transport['tls']> {
+  if (url.protocol !== 'https:' || !network) return {}
+  const out: Transport['tls'] = {}
+  if (network.caPath) out.ca = [...tls.rootCertificates, (await readCached(network.caPath)).toString()]
+  const cert = network.certificates.find((c) => hostMatches(c.host, url))
+  if (cert) {
+    if (cert.pfxPath) out.pfx = await readCached(cert.pfxPath)
+    if (cert.certPath) out.cert = await readCached(cert.certPath)
+    if (cert.keyPath) out.key = await readCached(cert.keyPath)
+    if (cert.passphrase) out.passphrase = cert.passphrase
+  }
+  return out
+}
+
 const friendlyError = (err: unknown): string => {
   const e = err as NodeJS.ErrnoException
   if (e?.name === 'AbortError') return 'Request cancelled'
@@ -165,10 +265,19 @@ const friendlyError = (err: unknown): string => {
   return e?.message ?? String(err)
 }
 
-export async function execute(req: PreparedRequest, signal: AbortSignal = new AbortController().signal): Promise<ExecuteResult> {
+export interface ExecuteOptions {
+  /** Cookies are read from and written back to this jar on every hop, redirects included. */
+  jar?: CookieJar
+  network?: NetworkSettings
+  /** When set, a 401 with a Digest challenge is answered once with these credentials. */
+  digest?: { username: string; password: string }
+}
+
+export async function execute(req: PreparedRequest, signal: AbortSignal = new AbortController().signal, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
   const started = performance.now()
   try {
     let url = new URL(req.url)
+    const origin = url.host
     let method: string = req.method
     let { data, contentType } = await encodeBody(req.body)
     let headers = [...req.headers]
@@ -178,10 +287,36 @@ export async function execute(req: PreparedRequest, signal: AbortSignal = new Ab
     if (!has('accept')) headers.push(['Accept', '*/*'])
     if (!has('accept-encoding')) headers.push(['Accept-Encoding', 'gzip, deflate, br'])
 
+    // A Cookie header typed by the user goes only to the original host; jar cookies are per hop.
+    const userCookie = headers.find(([k]) => k.toLowerCase() === 'cookie')?.[1]
+    headers = headers.filter(([k]) => k.toLowerCase() !== 'cookie')
+
     const redirects: ApiResponse['redirects'] = []
+    let digestTried = false
+    const digest = opts.digest ?? req.digest
     for (;;) {
-      const hop = await sendOnce(method, url, headers, data, req.settings.verifySsl, req.settings.timeoutMs, signal)
-      const location = hop.headers.find(([k]) => k.toLowerCase() === 'location')?.[1]
+      const cookie = [url.host === origin ? userCookie : undefined, opts.jar?.cookieHeader(url)].filter(Boolean).join('; ')
+      let hopHeaders: [string, string][] = cookie ? [...headers, ['Cookie', cookie]] : headers
+      if (req.awsv4) hopHeaders = signAwsV4(method, url, hopHeaders, data, req.awsv4)
+      const transport: Transport = {
+        verifySsl: req.settings.verifySsl,
+        timeoutMs: req.settings.timeoutMs,
+        tls: await tlsFor(url, opts.network),
+        proxy: proxyFor(url, opts.network)
+      }
+      const hop = await sendOnce(method, url, hopHeaders, data, transport, signal)
+      const header = (name: string): string | undefined => hop.headers.find(([k]) => k.toLowerCase() === name)?.[1]
+      opts.jar?.setFromHeaders(hop.headers.filter(([k]) => k.toLowerCase() === 'set-cookie').map(([, v]) => v), url)
+
+      const challenge = header('www-authenticate')
+      if (hop.status === 401 && digest && !digestTried && challenge && /^digest\s/i.test(challenge)) {
+        digestTried = true
+        const auth = digestAuthorization(challenge, method, url.pathname + url.search, digest.username, digest.password, data)
+        headers = [...headers.filter(([k]) => k.toLowerCase() !== 'authorization'), ['Authorization', auth]]
+        continue
+      }
+
+      const location = header('location')
       const isRedirect = hop.status >= 300 && hop.status < 400 && location
       if (isRedirect && req.settings.followRedirects && redirects.length < req.settings.maxRedirects) {
         redirects.push({ url: url.toString(), status: hop.status })
@@ -192,13 +327,12 @@ export async function execute(req: PreparedRequest, signal: AbortSignal = new Ab
           data = undefined
           headers = headers.filter(([k]) => !/^content-(type|length)$/i.test(k))
         }
-        if (next.host !== url.host) headers = headers.filter(([k]) => !/^(authorization|cookie)$/i.test(k))
+        if (next.host !== url.host) headers = headers.filter(([k]) => k.toLowerCase() !== 'authorization')
         url = next
         continue
       }
 
-      const ct = hop.headers.find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? ''
-      const textual = isTextual(ct)
+      const textual = isTextual(header('content-type') ?? '')
       const total = Math.round((performance.now() - started) * 10) / 10
       return {
         ok: true,

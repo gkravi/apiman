@@ -6,7 +6,9 @@ const api: Api = {
   saveWorkspace: (ws) => ipcRenderer.invoke('workspace:save', ws),
   runRequest: (id, input) => ipcRenderer.invoke('run:request', id, input),
   cancel: (id) => ipcRenderer.invoke('run:cancel', id),
-  startRunner: (runId, steps, vars, options) => ipcRenderer.invoke('runner:start', runId, steps, vars, options),
+  startRunner: (runId, steps, vars, options, ctx) => ipcRenderer.invoke('runner:start', runId, steps, vars, options, ctx),
+  oauth2Token: (cfg, ctx) => ipcRenderer.invoke('oauth2:token', cfg, ctx),
+  oauth2Refresh: (cfg, ctx) => ipcRenderer.invoke('oauth2:refresh', cfg, ctx),
   onRunnerResult: (cb) => {
     const listener = (_e: IpcRendererEvent, runId: string, result: Parameters<typeof cb>[1]): void => cb(runId, result)
     ipcRenderer.on('runner:result', listener)

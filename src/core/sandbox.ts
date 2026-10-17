@@ -4,7 +4,9 @@
 // with memory, stack and CPU-time limits.
 
 import { getQuickJS, shouldInterruptAfterDeadline, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
+import { randomBytes } from 'node:crypto'
 import { PRELUDE } from './sandbox-prelude'
+import { SANDBOX_LIBRARIES } from './sandbox-libs'
 import type { ConsoleEntry, LogLevel, RunVariables, TestResult } from './types'
 
 export interface SandboxRequest {
@@ -29,6 +31,8 @@ export interface ScriptContext {
   variables: RunVariables
   request: SandboxRequest
   response?: SandboxResponse
+  /** Cookies the jar holds for the request (or final response) URL, for pm.cookies. */
+  cookies?: { name: string; value: string }[]
   info: { requestName: string; requestId: string; iteration: number; iterationCount: number }
 }
 
@@ -122,11 +126,25 @@ export async function runScript(code: string, sc: ScriptContext, options: Sandbo
     ctx.setProp(ctx.global, '__host_send', sendFn)
     sendFn.dispose()
 
+    // require(): hand back embedded library source for the prelude to evaluate in-sandbox.
+    const requireFn = ctx.newFunction('__host_require', (nameH) => {
+      const src = SANDBOX_LIBRARIES[ctx.getString(nameH)]
+      return src === undefined ? ctx.undefined : ctx.newString(src)
+    })
+    ctx.setProp(ctx.global, '__host_require', requireFn)
+    requireFn.dispose()
+
+    // Secure randomness for crypto.getRandomValues (used by CryptoJS salts, uuid).
+    const randomFn = ctx.newFunction('__host_random', (nH) => ctx.newString(randomBytes(Math.min(65536, Math.max(0, ctx.getNumber(nH)))).toString('hex')))
+    ctx.setProp(ctx.global, '__host_random', randomFn)
+    randomFn.dispose()
+
     const state = {
       event: sc.event,
       vars: sc.variables,
       request: sc.request,
       response: sc.response ?? null,
+      cookies: sc.cookies ?? [],
       info: { ...sc.info, eventName: sc.event }
     }
     evalOrThrow(`globalThis.__state = ${JSON.stringify(state)};`, 'state.js')

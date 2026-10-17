@@ -11,7 +11,23 @@ npm run build      # production build into out/
 npm start          # run the production build
 npm test           # core unit + integration tests
 npm run typecheck
+npm run cli -- run my.postman_collection.json -e dev.postman_environment.json
 ```
+
+## CLI
+
+`npm run build` also produces `out/cli/apiman.cjs` (exposed as the `apiman` bin), a Newman-style
+runner that shares the app's core — same executor, sandbox, cookie jar and runner:
+
+```bash
+apiman run collection.json -e env.json -d data.csv -n 3 --folder Users \
+  --env-var token=abc -r cli,json,junit --reporter-junit-export results.xml \
+  --export-environment env.after.json --bail
+```
+
+It accepts Postman collections and OpenAPI/Swagger specs, supports `--proxy`, `--ca-cert`,
+`--ssl-client-cert/key/pfx`, `--insecure`, `--timeout-request`, `--delay-request`, and exits
+`0` (all passed), `1` (failed tests or request errors) or `2` (bad input). Run `apiman --help` for all flags.
 
 ## Layout
 
@@ -27,11 +43,16 @@ src/
     sandbox-prelude.ts  the pm API + chai-style expect, evaluated inside the sandbox
     run.ts         request lifecycle (pre-request → send → tests) and the collection runner
     varsync.ts     script variable changes ↔ variable tables; CSV/JSON data files
+    cookies.ts     RFC 6265 cookie jar (persisted in the workspace)
+    digest.ts, awsv4.ts, oauth2.ts   Digest challenge, SigV4 signing, OAuth 2.0 grants (Node only)
+    openapi.ts     OpenAPI 3 / Swagger 2 (JSON or YAML) → collection
+    sandbox-libs.ts  crypto-js and lodash sources embedded for require() in scripts
     curl.ts        cURL import/export
     postman.ts     Postman Collection v2.0/2.1 + environment import/export
     codegen.ts     snippets: cURL, fetch, axios, Python requests
     tree.ts        immutable collection-tree helpers
-  main/        Electron main process: window, IPC, JSON workspace storage
+  cli/         apiman command-line runner and its cli/json/junit reporters
+  main/        Electron main process: window, IPC, JSON workspace storage, OAuth sign-in window
   preload/     contextBridge API exposed as window.api
   renderer/    React UI (zustand store, components)
 ```
@@ -65,9 +86,24 @@ The workspace is saved to `workspace.json` in the Electron user-data directory.
   setNextRequest flow control, live results by iteration, JSON export
 - Postman import/export now includes scripts
 
-Not yet supported in scripts: `require()` of libraries (lodash, CryptoJS, …), `pm.cookies`, `setTimeout` delays.
+## Phase 3 features (done)
 
-## Next (Phase 3)
+- Cookie jar (RFC 6265: domain/path/secure/expiry), applied on every redirect hop, shared by sends,
+  runs and `pm.sendRequest`; `pm.cookies`; cookie manager to view, add and delete cookies
+- Auth: Digest (MD5, MD5-sess, SHA-256; auth/auth-int), AWS Signature V4 (verified against AWS test
+  vectors), OAuth 2.0 — authorization code with PKCE in a sign-in window, client credentials,
+  password, refresh — with tokens stored on the request/folder/collection
+- Settings: HTTP proxy with auth and bypass list (CONNECT tunnelling for HTTPS), extra CA certificates,
+  per-host client certificates (CRT+KEY or PFX)
+- OpenAPI 3.x / Swagger 2.0 import (JSON or YAML): folders per tag, `{{baseUrl}}`, path params as
+  variables, example bodies generated from schemas, collection auth from security schemes
+- Script libraries: `require('crypto-js')`, `require('lodash')`, `require('uuid')`, plus the `CryptoJS` and
+  `_` globals and a secure `crypto.getRandomValues`
+- `apiman` CLI runner (see above)
 
-Persistent cookie jar, OAuth 2.0 / Digest / AWS SigV4, proxy and client certificates, OpenAPI import,
-bundled script libraries (CryptoJS, lodash), then a CLI runner built on `src/core`.
+Not yet supported: `setTimeout` delays in scripts, `pm.cookies.jar()`, WebSocket/GraphQL schema/gRPC.
+
+## Next (Phase 4)
+
+GraphQL schema introspection and autocomplete, WebSocket and Server-Sent Events, gRPC,
+mock servers from saved examples, and app packaging (signed installers).

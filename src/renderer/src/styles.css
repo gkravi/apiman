@@ -1455,3 +1455,110 @@ select.cell.small {
   white-space: pre-wrap;
   user-select: text;
 }
+
+/* ---------- phase 3: auth, cookies, settings ---------- */
+.auth-fields {
+  max-height: none;
+}
+.oauth2 {
+  display: flex;
+  flex-direction: column;
+  max-width: 560px;
+}
+.token-box {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px 0;
+  margin-bottom: 14px;
+}
+.token-box .small {
+  margin: -6px 0 10px;
+}
+.field.narrow input {
+  max-width: 160px;
+}
+.warn-text {
+  color: var(--warn);
+}
+.danger-text {
+  color: var(--danger);
+}
+.row-actions {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.cookie-layout {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-height: 220px;
+  max-height: 340px;
+  margin-bottom: 14px;
+}
+.cookie-domains {
+  width: 220px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 4px;
+}
+.domain-btn {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.domain-btn:hover {
+  background: var(--bg-hover);
+}
+.domain-btn.active {
+  background: var(--bg-3);
+}
+.cookie-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px;
+  min-width: 0;
+}
+.cookie-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.cookie-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+.add-cookie {
+  display: flex;
+  gap: 8px;
+}
+.grow {
+  flex: 1;
+}
+.settings-grid.wide {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+}
+.cert-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px 0;
+  margin-bottom: 10px;
+}
+.cert-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}

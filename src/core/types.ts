@@ -1,5 +1,9 @@
 // Shared data model. Pure types only — safe to import from main, preload and renderer.
 
+import type { Cookie } from './cookies'
+
+export type { Cookie }
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 
 export const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
@@ -36,6 +40,65 @@ export type Auth =
   | { type: 'basic'; username: string; password: string }
   | { type: 'bearer'; token: string }
   | { type: 'apikey'; key: string; value: string; in: 'header' | 'query' }
+  | { type: 'digest'; username: string; password: string }
+  | ({ type: 'awsv4' } & AwsCredentials)
+  | ({ type: 'oauth2' } & OAuth2Config)
+
+export interface AwsCredentials {
+  accessKey: string
+  secretKey: string
+  sessionToken: string
+  region: string
+  service: string
+}
+
+export type OAuth2Grant = 'authorization_code' | 'client_credentials' | 'password'
+
+export interface OAuth2Config {
+  grantType: OAuth2Grant
+  authUrl: string
+  accessTokenUrl: string
+  clientId: string
+  clientSecret: string
+  scope: string
+  redirectUri: string
+  usePkce: boolean
+  /** How client credentials are sent to the token endpoint. */
+  clientAuth: 'header' | 'body'
+  username: string
+  password: string
+  headerPrefix: string
+  /** The current token — fetched with "Get New Access Token", stored with the request. */
+  accessToken: string
+  refreshToken?: string
+  /** Epoch ms. */
+  expiresAt?: number
+}
+
+export const DEFAULT_OAUTH2: OAuth2Config = {
+  grantType: 'authorization_code',
+  authUrl: '',
+  accessTokenUrl: '',
+  clientId: '',
+  clientSecret: '',
+  scope: '',
+  redirectUri: 'http://localhost:5937/callback',
+  usePkce: true,
+  clientAuth: 'header',
+  username: '',
+  password: '',
+  headerPrefix: 'Bearer',
+  accessToken: ''
+}
+
+export interface OAuth2TokenResult {
+  accessToken: string
+  refreshToken?: string
+  expiresAt?: number
+  tokenType?: string
+  scope?: string
+  raw: Record<string, unknown>
+}
 
 export type AuthType = Auth['type']
 
@@ -116,12 +179,44 @@ export interface HistoryEntry {
   durationMs?: number
 }
 
+export interface ProxySettings {
+  enabled: boolean
+  /** e.g. http://user:pass@proxy.local:8080 */
+  url: string
+  /** Comma-separated hosts that skip the proxy; supports *.domain and host:port. */
+  bypass: string
+}
+
+export interface ClientCertificate {
+  id: string
+  /** Hostname the certificate is used for; `*.example.com` matches subdomains; optional :port. */
+  host: string
+  certPath?: string
+  keyPath?: string
+  pfxPath?: string
+  passphrase?: string
+}
+
+export interface NetworkSettings {
+  proxy: ProxySettings
+  /** Extra CA bundle (PEM) trusted in addition to the system roots. */
+  caPath?: string
+  certificates: ClientCertificate[]
+}
+
+export const DEFAULT_NETWORK: NetworkSettings = {
+  proxy: { enabled: false, url: '', bypass: 'localhost,127.0.0.1' },
+  certificates: []
+}
+
 export interface Workspace {
   collections: Collection[]
   environments: Environment[]
   globals: Variable[]
   activeEnvironmentId: string | null
   history: HistoryEntry[]
+  cookies?: Cookie[]
+  settings?: NetworkSettings
 }
 
 /** A request with every variable and inherited auth resolved — what the executor actually sends. */
@@ -131,6 +226,9 @@ export interface PreparedRequest {
   headers: [string, string][]
   body: PreparedBody
   settings: RequestSettings
+  /** Auth that needs the wire-level request (challenge round-trip or signing); handled by the executor. */
+  digest?: { username: string; password: string }
+  awsv4?: AwsCredentials
 }
 
 export type PreparedBody =
@@ -195,6 +293,9 @@ export interface RunVariables {
 
 export interface RunRequestInput extends RunStep {
   variables: RunVariables
+  /** Cookie jar contents going in; the updated jar comes back on the result. */
+  cookies?: Cookie[]
+  network?: NetworkSettings
   info: { requestName: string; requestId: string; iteration: number; iterationCount: number }
 }
 
@@ -205,6 +306,7 @@ export interface RunRequestResult {
   tests: TestResult[]
   console: ConsoleEntry[]
   variables: RunVariables
+  cookies: Cookie[]
   scriptError?: string
   /** Set by pm.execution.setNextRequest: a request name, or null to stop. Undefined means "carry on". */
   nextRequest?: string | null

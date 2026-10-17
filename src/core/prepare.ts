@@ -48,6 +48,10 @@ export function prepareRequest(req: ApiRequest, scopes: Scope[], parentAuths: (A
     case 'bearer':
       if (!hasHeader('authorization')) headers.push(['Authorization', `Bearer ${r(auth.token)}`])
       break
+    case 'oauth2':
+      if (auth.accessToken && !hasHeader('authorization'))
+        headers.push(['Authorization', `${r(auth.headerPrefix || 'Bearer')} ${r(auth.accessToken)}`.trim()])
+      break
     case 'apikey':
       if (auth.in === 'header') headers.push([r(auth.key), r(auth.value)])
       else {
@@ -101,5 +105,9 @@ export function prepareRequest(req: ApiRequest, scopes: Scope[], parentAuths: (A
     headers.push(['Content-Type', body.contentType])
   }
 
-  return { method: req.method, url, headers, body, settings: req.settings }
+  const prepared: PreparedRequest = { method: req.method, url, headers, body, settings: req.settings }
+  if (auth.type === 'digest') prepared.digest = { username: r(auth.username), password: r(auth.password) }
+  if (auth.type === 'awsv4')
+    prepared.awsv4 = { accessKey: r(auth.accessKey), secretKey: r(auth.secretKey), sessionToken: r(auth.sessionToken), region: r(auth.region), service: r(auth.service) }
+  return prepared
 }

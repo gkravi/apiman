@@ -111,6 +111,12 @@ export function App(): React.JSX.Element {
           Import
         </button>
         <span className="spacer" />
+        <button className="btn small ghost" onClick={() => s.openModal({ kind: 'cookies' })}>
+          Cookies
+        </button>
+        <button className="btn small ghost" onClick={() => s.openModal({ kind: 'settings' })} title="Proxy & certificates">
+          ⚙ Settings
+        </button>
         <EnvironmentSelect />
       </header>
       <div className="main">

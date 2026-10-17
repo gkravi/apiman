@@ -5,7 +5,9 @@ import react from '@vitejs/plugin-react'
 const alias = { '@core': resolve(__dirname, 'src/core') }
 
 export default defineConfig({
-  main: { plugins: [externalizeDepsPlugin()], resolve: { alias } },
+  // crypto-js and lodash are imported as ?raw source for the script sandbox, so they must be
+  // inlined into the bundle rather than required at runtime.
+  main: { plugins: [externalizeDepsPlugin({ exclude: ['crypto-js', 'lodash'] })], resolve: { alias } },
   preload: { plugins: [externalizeDepsPlugin()], resolve: { alias } },
   renderer: { plugins: [react()], resolve: { alias } }
 })

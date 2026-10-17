@@ -3,6 +3,7 @@ import { newCollection, newKeyValue } from '@core/factory'
 import { parseCurl } from '@core/curl'
 import { generateSnippet, SNIPPET_LANGUAGES, type SnippetLanguage } from '@core/codegen'
 import { importPostmanCollection, importPostmanEnvironment, isPostmanCollection, isPostmanEnvironment } from '@core/postman'
+import { importOpenApi, isOpenApi, parseSpecText } from '@core/openapi'
 import type { CollectionItem, Variable } from '@core/types'
 import { prepareTab, useStore, type Modal } from '../store'
 import { CodeEditor } from './CodeEditor'
@@ -10,6 +11,7 @@ import { KeyValueTable } from './KeyValueTable'
 import { AuthEditor } from './RequestEditor'
 import { ScriptsEditor } from './ScriptsEditor'
 import { RunnerModal } from './RunnerModal'
+import { CookiesModal, SettingsModal } from './SettingsModals'
 import { locate } from '@core/tree'
 
 function Shell({ title, onClose, children, wide, footer }: { title: string; onClose(): void; children: React.ReactNode; wide?: boolean; footer?: React.ReactNode }): React.JSX.Element {
@@ -51,8 +53,13 @@ function ImportModal({ close }: { close(): void }): React.JSX.Element {
         s.showToast('cURL imported into a new tab')
         return close()
       }
-      const json = JSON.parse(trimmed)
-      if (isPostmanCollection(json)) {
+      const json = parseSpecText(trimmed)
+      if (isOpenApi(json)) {
+        const c = importOpenApi(json)
+        s.addCollection(c)
+        s.setSidebar('collections')
+        s.showToast(`Imported "${c.name}" from ${json.swagger ? 'Swagger 2.0' : `OpenAPI ${json.openapi}`}`)
+      } else if (isPostmanCollection(json)) {
         const c = importPostmanCollection(json)
         s.addCollection(c)
         s.setSidebar('collections')
@@ -62,10 +69,10 @@ function ImportModal({ close }: { close(): void }): React.JSX.Element {
         s.addEnvironment(e)
         s.setSidebar('environments')
         s.showToast(`Imported environment "${e.name}"`)
-      } else throw new Error('Unrecognised format — expected a Postman collection (v2.x), Postman environment, or cURL command.')
+      } else throw new Error('Unrecognised format — expected a Postman collection (v2.x) or environment, an OpenAPI/Swagger spec, or a cURL command.')
       close()
     } catch (e) {
-      setError(e instanceof SyntaxError ? 'Invalid JSON' : (e as Error).message)
+      setError(e instanceof SyntaxError ? 'Could not parse that as JSON or YAML' : (e as Error).message)
     }
   }
 
@@ -95,7 +102,7 @@ function ImportModal({ close }: { close(): void }): React.JSX.Element {
         </>
       }
     >
-      <p className="hint">Paste a cURL command, Postman collection (v2.0/v2.1) or Postman environment JSON — or choose a file.</p>
+      <p className="hint">Paste a cURL command, a Postman collection (v2.0/v2.1) or environment, or an OpenAPI 3 / Swagger 2 spec (JSON or YAML) — or choose a file.</p>
       <div className="editor-box tall">
         <CodeEditor value={text} onChange={setText} placeholder={"curl https://api.example.com/users -H 'Accept: application/json'"} />
       </div>
@@ -446,5 +453,9 @@ export function ModalHost(): React.JSX.Element | null {
       return <FolderModal folderId={modal.folderId} close={close} />
     case 'runner':
       return <RunnerModal collectionId={modal.collectionId} folderId={modal.folderId} close={close} />
+    case 'cookies':
+      return <CookiesModal initialDomain={modal.domain} close={close} />
+    case 'settings':
+      return <SettingsModal close={close} />
   }
 }

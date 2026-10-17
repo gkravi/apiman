@@ -10,8 +10,10 @@ import type {
   Collection,
   CollectionItem,
   ConsoleEntry,
+  Cookie,
   Environment,
   Folder,
+  NetworkSettings,
   PreparedRequest,
   RunnerOptions,
   RunnerRequestResult,
@@ -22,6 +24,7 @@ import type {
   TestResult,
   Workspace
 } from '@core/types'
+import { DEFAULT_NETWORK } from '@core/types'
 
 const HISTORY_LIMIT = 200
 const CONSOLE_LIMIT = 1000
@@ -62,6 +65,8 @@ export type Modal =
   | { kind: 'collection'; collectionId: string }
   | { kind: 'folder'; folderId: string }
   | { kind: 'runner'; collectionId: string; folderId: string | null }
+  | { kind: 'cookies'; domain?: string }
+  | { kind: 'settings' }
   | { kind: 'prompt'; title: string; initial: string; onSubmit: (value: string) => void }
 
 interface State {
@@ -117,6 +122,8 @@ interface State {
   deleteEnvironment(id: string): void
   setActiveEnvironment(id: string | null): void
   updateGlobals(globals: Workspace['globals']): void
+  setCookies(cookies: Cookie[]): void
+  updateNetwork(patch: Partial<NetworkSettings>): void
   clearHistory(): void
 }
 
@@ -296,6 +303,9 @@ export const useStore = create<State>((set, get) => {
         info: { requestName: tab.draft.name, requestId: tab.draft.id, iteration: 0, iterationCount: 1 }
       }
 
+      input.cookies = ws.cookies ?? []
+      input.network = ws.settings
+
       const execId = uid()
       patchTab(tabId, { loading: true, execId, error: undefined, scriptError: undefined, tests: undefined, sentAt: Date.now() })
       const run = await window.api.runRequest(execId, input)
@@ -306,6 +316,7 @@ export const useStore = create<State>((set, get) => {
         const next = applyRunVariables(w, loc?.collection.id, before, run.variables)
         return {
           ...next,
+          cookies: run.cookies,
           history: [
             {
               id: uid(),
@@ -407,8 +418,8 @@ export const useStore = create<State>((set, get) => {
         }))
       })
       try {
-        const { summary, variables } = await window.api.startRunner(runId, steps, before, options)
-        if (persistVariables) mutate((w) => applyRunVariables(w, collectionId, before, variables))
+        const { summary, variables, cookies } = await window.api.startRunner(runId, steps, before, options, { cookies: ws.cookies ?? [], network: ws.settings })
+        mutate((w) => ({ ...(persistVariables ? applyRunVariables(w, collectionId, before, variables) : w), cookies }))
         set((s) => ({ runner: s.runner?.runId === runId ? { ...s.runner, status: 'done', summary } : s.runner }))
       } catch (e) {
         set((s) => ({ runner: s.runner?.runId === runId ? { ...s.runner, status: 'done', error: (e as Error).message } : s.runner }))
@@ -436,6 +447,8 @@ export const useStore = create<State>((set, get) => {
       })),
     setActiveEnvironment: (id) => mutate((ws) => ({ ...ws, activeEnvironmentId: id })),
     updateGlobals: (globals) => mutate((ws) => ({ ...ws, globals })),
-    clearHistory: () => mutate((ws) => ({ ...ws, history: [] }))
+    clearHistory: () => mutate((ws) => ({ ...ws, history: [] })),
+    setCookies: (cookies) => mutate((ws) => ({ ...ws, cookies })),
+    updateNetwork: (patch) => mutate((ws) => ({ ...ws, settings: { ...DEFAULT_NETWORK, ...ws.settings, ...patch } }))
   }
 })
