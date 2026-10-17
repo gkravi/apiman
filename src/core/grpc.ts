@@ -1,5 +1,5 @@
-// Node-only: gRPC over @grpc/grpc-js using .proto files — service discovery with example messages,
-// and unary / server-streaming / client-streaming / bidirectional calls as realtime sessions.
+// Node-only: gRPC over @grpc/grpc-js — service discovery from .proto files or server reflection,
+// example messages, and unary / server / client / bidirectional streaming calls as realtime sessions.
 
 import * as grpc from '@grpc/grpc-js'
 import * as protoLoader from '@grpc/proto-loader'
@@ -8,11 +8,19 @@ import { existsSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { tlsFor } from './executor'
 import { prepareRealtime, type Emit, type RealtimeSession } from './realtime'
-import type { GrpcServiceInfo, RealtimeOpenInput } from './types'
+import { reflectFileDescriptorSet } from './grpc-reflection'
+import 'protobufjs/ext/descriptor' // adds Root.fromDescriptor
+import type { GrpcServiceInfo, PreparedRequest, RealtimeOpenInput } from './types'
 
 const LOADER_OPTIONS = { keepCase: true, longs: String, enums: String, bytes: String, defaults: true, oneofs: true }
 
 type PackageDefinition = protoLoader.PackageDefinition
+
+/** Everything needed about a set of services: grpc-js definitions to call, protobufjs types to sample. */
+export interface Definitions {
+  pkg: PackageDefinition
+  root: protobuf.Root
+}
 
 async function load(protoFiles: string[], includeDirs: string[]): Promise<PackageDefinition> {
   if (!protoFiles.length) throw new Error('Select at least one .proto file')
@@ -73,12 +81,14 @@ export function sampleMessage(type: protobuf.Type, depth = 0): Record<string, un
   return out
 }
 
-export async function describeProto(protoFiles: string[], includeDirs: string[] = []): Promise<GrpcServiceInfo[]> {
-  const pkg = await load(protoFiles, includeDirs)
-  const root = reflectionRoot(protoFiles, includeDirs)
+async function fromFiles(protoFiles: string[], includeDirs: string[]): Promise<Definitions> {
+  return { pkg: await load(protoFiles, includeDirs), root: reflectionRoot(protoFiles, includeDirs) }
+}
+
+function servicesOf({ pkg, root }: Definitions): GrpcServiceInfo[] {
   const services: GrpcServiceInfo[] = []
   for (const [name, def] of Object.entries(pkg)) {
-    if (!isService(def)) continue
+    if (!isService(def) || name.startsWith('grpc.reflection.')) continue
     services.push({
       name,
       methods: Object.entries(def).map(([methodName, m]) => {
@@ -95,6 +105,49 @@ export async function describeProto(protoFiles: string[], includeDirs: string[] 
     })
   }
   return services.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function describeProto(protoFiles: string[], includeDirs: string[] = []): Promise<GrpcServiceInfo[]> {
+  return servicesOf(await fromFiles(protoFiles, includeDirs))
+}
+
+/** Address, credentials and metadata for a gRPC request — shared by calls and reflection. */
+export interface GrpcConnection {
+  address: string
+  secure: boolean
+  creds: grpc.ChannelCredentials
+  metadata: grpc.Metadata
+  prepared: PreparedRequest
+}
+
+export async function grpcConnection(input: RealtimeOpenInput): Promise<GrpcConnection> {
+  const prepared = prepareRealtime(input)
+  const { address, secure } = parseTarget(prepared.url)
+  const metadata = new grpc.Metadata()
+  for (const [k, v] of prepared.headers) if (!SKIP_METADATA.test(k)) metadata.add(k.toLowerCase(), v)
+  let creds = grpc.credentials.createInsecure()
+  if (secure) {
+    const t = await tlsFor(new URL(`https://${address}`), input.network)
+    const toBuf = (v: unknown): Buffer | null => (v === undefined ? null : Buffer.isBuffer(v) ? v : Buffer.from(Array.isArray(v) ? v.join('\n') : String(v)))
+    creds = grpc.credentials.createSsl(toBuf(t.ca), toBuf(t.key), toBuf(t.cert), prepared.settings.verifySsl ? undefined : { checkServerIdentity: () => undefined })
+  }
+  return { address, secure, creds, metadata, prepared }
+}
+
+async function definitionsFor(input: RealtimeOpenInput, conn?: GrpcConnection): Promise<Definitions> {
+  const cfg = input.request.grpc
+  if (cfg?.source === 'reflection') {
+    const set = await reflectFileDescriptorSet(conn ?? (await grpcConnection(input)))
+    const root = (protobuf.Root as unknown as { fromDescriptor(b: Uint8Array): protobuf.Root }).fromDescriptor(set)
+    root.resolveAll()
+    return { pkg: protoLoader.loadFileDescriptorSetFromBuffer(Buffer.from(set), LOADER_OPTIONS), root }
+  }
+  return fromFiles(cfg?.protoFiles ?? [], cfg?.includeDirs ?? [])
+}
+
+/** Services for a request's gRPC config — from its .proto files or by asking the server. */
+export async function describeGrpc(input: RealtimeOpenInput): Promise<GrpcServiceInfo[]> {
+  return servicesOf(await definitionsFor(input))
 }
 
 /** proto-loader gives method types as definition objects; find the fully-qualified name. */
@@ -118,22 +171,15 @@ const SKIP_METADATA = /^(content-type|user-agent|accept|accept-encoding|host|con
 export async function openGrpc(input: RealtimeOpenInput, emit: Emit): Promise<RealtimeSession> {
   const cfg = input.request.grpc
   if (!cfg?.service || !cfg.method) throw new Error('Choose a service and method')
-  const prepared = prepareRealtime(input)
-  const { address, secure } = parseTarget(prepared.url)
-  const pkg = await load(cfg.protoFiles, cfg.includeDirs)
+  const conn = await grpcConnection(input)
+  const { address, secure, creds, metadata, prepared } = conn
+  const { pkg } = await definitionsFor(input, conn)
   const svcDef = pkg[cfg.service]
-  if (!isService(svcDef) || !svcDef[cfg.method]) throw new Error(`${cfg.service}/${cfg.method} is not in the loaded proto files`)
+  if (!isService(svcDef) || !svcDef[cfg.method]) {
+    throw new Error(`${cfg.service}/${cfg.method} is not in the ${cfg.source === 'reflection' ? "server's reflection data" : 'loaded proto files'}`)
+  }
   const method = svcDef[cfg.method]
 
-  const metadata = new grpc.Metadata()
-  for (const [k, v] of prepared.headers) if (!SKIP_METADATA.test(k)) metadata.add(k.toLowerCase(), v)
-
-  let creds = grpc.credentials.createInsecure()
-  if (secure) {
-    const t = await tlsFor(new URL(`https://${address}`), input.network)
-    const toBuf = (v: unknown): Buffer | null => (v === undefined ? null : Buffer.isBuffer(v) ? v : Buffer.from(Array.isArray(v) ? v.join('\n') : String(v)))
-    creds = grpc.credentials.createSsl(toBuf(t.ca), toBuf(t.key), toBuf(t.cert), prepared.settings.verifySsl ? undefined : { checkServerIdentity: () => undefined })
-  }
   const Client = grpc.makeGenericClientConstructor({ [cfg.method]: method } as grpc.ServiceDefinition, cfg.service)
   const client = new Client(address, creds, { 'grpc.max_receive_message_length': 50 * 1024 * 1024 })
   const kind = method.requestStream ? (method.responseStream ? 'bidi' : 'client') : method.responseStream ? 'server' : 'unary'

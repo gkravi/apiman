@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { runCollection, runRequest } from '@core/run'
@@ -35,6 +35,14 @@ function createWindow(): void {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // The window only ever shows the app itself; links in docs or responses open in the browser.
+  win.webContents.on('will-navigate', (e, url) => {
+    const appOrigin = process.env.ELECTRON_RENDERER_URL ? new URL(process.env.ELECTRON_RENDERER_URL).origin : 'file://'
+    if (url.startsWith(appOrigin)) return
+    e.preventDefault()
+    if (/^(https?|mailto):/.test(url)) void shell.openExternal(url)
   })
 
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -124,6 +132,24 @@ ipcMain.handle('dialog:openData', async () => {
 
 ipcMain.handle('dialog:saveJson', async (_e, defaultName: string, content: string) => {
   const r = await dialog.showSaveDialog({ defaultPath: defaultName, filters: [{ name: 'JSON', extensions: ['json'] }] })
+  if (r.canceled || !r.filePath) return false
+  await writeFile(r.filePath, content, 'utf8')
+  return true
+})
+
+ipcMain.handle('notify', (e, title: string, body: string) => {
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title, body })
+  n.on('click', () => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (win?.isMinimized()) win.restore()
+    win?.focus()
+  })
+  n.show()
+})
+
+ipcMain.handle('dialog:saveText', async (_e, defaultName: string, content: string, extensions: string[]) => {
+  const r = await dialog.showSaveDialog({ defaultPath: defaultName, filters: [{ name: extensions.join(', ').toUpperCase(), extensions }] })
   if (r.canceled || !r.filePath) return false
   await writeFile(r.filePath, content, 'utf8')
   return true

@@ -1,6 +1,6 @@
 import { ipcMain, type WebContents } from 'electron'
 import { openSse, openWebSocket, type RealtimeSession } from '@core/realtime'
-import { describeProto, openGrpc } from '@core/grpc'
+import { describeGrpc, openGrpc } from '@core/grpc'
 import type { RealtimeOpenInput, StreamEvent } from '@core/types'
 
 // Live WebSocket / SSE / gRPC sessions, keyed by an id the renderer chooses. Events stream back
@@ -28,9 +28,9 @@ export function registerRealtime(): void {
   ipcMain.handle('rt:end', (_e, id: string) => sessions.get(id)?.session.end())
   ipcMain.handle('rt:close', (_e, id: string) => sessions.get(id)?.session.close())
 
-  ipcMain.handle('grpc:describe', async (_e, files: string[], includeDirs: string[]) => {
+  ipcMain.handle('grpc:describe', async (_e, input: RealtimeOpenInput) => {
     try {
-      return { ok: true, services: await describeProto(files, includeDirs) }
+      return { ok: true, services: await describeGrpc(input) }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }

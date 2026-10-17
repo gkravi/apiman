@@ -71,6 +71,13 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     void useStore.getState().init()
+    // Monitors: check every 30 s which ones are due (first check shortly after start-up).
+    const first = setTimeout(() => useStore.getState().tickMonitors(), 5000)
+    const timer = setInterval(() => useStore.getState().tickMonitors(), 30_000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(timer)
+    }
   }, [])
 
   useEffect(() => {

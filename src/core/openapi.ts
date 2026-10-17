@@ -209,7 +209,8 @@ export function importOpenApi(doc: Json): Collection {
         params: [...paramsFromUrl(url), ...query.filter((q) => !q.enabled)],
         headers,
         body,
-        auth: Array.isArray(op.security) && op.security.length === 0 ? { type: 'none' } : { type: 'inherit' }
+        auth: Array.isArray(op.security) && op.security.length === 0 ? { type: 'none' } : { type: 'inherit' },
+        description: typeof op.description === 'string' && op.description.trim() ? op.description : undefined
       })
       const tag = op.tags?.[0]
       if (tag) folders.set(tag, [...(folders.get(tag) ?? []), newRequestItem(request)])
@@ -227,5 +228,6 @@ export function importOpenApi(doc: Json): Collection {
   collection.items = [...sortedTags.map((t) => ({ ...newFolder(t), items: folders.get(t)! })), ...root]
   collection.variables = variables
   collection.auth = securityAuth(doc)
+  if (typeof doc.info?.description === 'string' && doc.info.description.trim()) collection.description = doc.info.description
   return collection
 }

@@ -79,6 +79,12 @@ function exportScripts(s: Scripts | undefined): Json[] | undefined {
   return events.length ? events : undefined
 }
 
+/** Postman descriptions are a string or { content, type }. */
+const descriptionText = (d: Json): string | undefined => {
+  const text = typeof d === 'string' ? d : typeof d?.content === 'string' ? d.content : undefined
+  return text?.trim() ? text : undefined
+}
+
 function importExamples(responses: Json[] | undefined): SavedExample[] | undefined {
   if (!Array.isArray(responses) || responses.length === 0) return undefined
   return responses.map((r) => ({
@@ -173,14 +179,23 @@ function importRequest(name: string, r: Json, events?: Json[]): ApiRequest {
     headers: toKv(r.header),
     body: importBody(r.body),
     auth: importAuth(r.auth) ?? { type: 'inherit' },
-    scripts: importScripts(events)
+    scripts: importScripts(events),
+    description: descriptionText(r.description)
   })
 }
 
 function importItems(items: Json[] | undefined): CollectionItem[] {
   return (items ?? []).map((it: Json): CollectionItem => {
     if (Array.isArray(it.item)) {
-      return { id: uid(), type: 'folder', name: String(it.name ?? 'Folder'), items: importItems(it.item), auth: importAuth(it.auth), scripts: importScripts(it.event) }
+      return {
+        id: uid(),
+        type: 'folder',
+        name: String(it.name ?? 'Folder'),
+        items: importItems(it.item),
+        auth: importAuth(it.auth),
+        scripts: importScripts(it.event),
+        description: descriptionText(it.description)
+      }
     }
     const request = importRequest(String(it.name ?? 'Request'), it.request ?? {}, it.event)
     request.examples = importExamples(it.response)
@@ -205,7 +220,8 @@ export function importPostmanCollection(json: Json): Collection {
     items: importItems(json.item),
     variables: toKv(json.variable),
     auth: importAuth(json.auth) ?? { type: 'none' },
-    scripts: importScripts(json.event)
+    scripts: importScripts(json.event),
+    description: descriptionText(json.info.description)
   }
 }
 
@@ -223,13 +239,14 @@ export function importPostmanEnvironment(json: Json): Environment {
 
 function exportItems(items: CollectionItem[]): Json[] {
   return items.map((it) => {
-    if (it.type === 'folder') return { name: it.name, item: exportItems(it.items), auth: exportAuth(it.auth), event: exportScripts(it.scripts) }
+    if (it.type === 'folder') return { name: it.name, description: it.description || undefined, item: exportItems(it.items), auth: exportAuth(it.auth), event: exportScripts(it.scripts) }
     const r = it.request
     const request = {
       method: r.method,
       header: r.headers.map((h) => ({ key: h.key, value: h.value, disabled: !h.enabled || undefined })),
       body: exportBody(r.body),
       auth: exportAuth(r.auth),
+      description: r.description || undefined,
       url: {
         raw: r.url,
         query: r.params.map((p) => ({ key: p.key, value: p.value, disabled: !p.enabled || undefined }))
@@ -241,7 +258,7 @@ function exportItems(items: CollectionItem[]): Json[] {
 
 export function exportPostmanCollection(c: Collection): Json {
   return {
-    info: { _postman_id: c.id, name: c.name, schema: SCHEMA_V21 },
+    info: { _postman_id: c.id, name: c.name, schema: SCHEMA_V21, description: c.description || undefined },
     item: exportItems(c.items),
     variable: c.variables.map((v) => ({ key: v.key, value: v.value, disabled: !v.enabled || undefined })),
     auth: exportAuth(c.auth),

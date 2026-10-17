@@ -12,6 +12,8 @@ export const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELET
 export type Protocol = 'http' | 'websocket' | 'sse' | 'grpc'
 
 export interface GrpcConfig {
+  /** Where service definitions come from; defaults to 'proto'. */
+  source?: 'proto' | 'reflection'
   /** .proto files to load; imports are resolved relative to each file and `includeDirs`. */
   protoFiles: string[]
   includeDirs: string[]
@@ -149,11 +151,21 @@ export interface ApiRequest {
   protocol?: Protocol
   /** Draft message for WebSocket / gRPC composers. */
   message?: string
+  /** Named messages kept with the request for one-click reuse. */
+  savedMessages?: SavedMessage[]
   /** WebSocket sub-protocols, comma-separated. */
   subprotocols?: string
   grpc?: GrpcConfig
   /** Saved responses ("examples"), also served by mock servers. */
   examples?: SavedExample[]
+  /** Markdown documentation. */
+  description?: string
+}
+
+export interface SavedMessage {
+  id: string
+  name: string
+  body: string
 }
 
 export interface SavedExample {
@@ -172,6 +184,7 @@ export interface Folder {
   items: CollectionItem[]
   auth?: Auth
   scripts?: Scripts
+  description?: string
 }
 
 export interface RequestItem {
@@ -189,6 +202,7 @@ export interface Collection {
   variables: KeyValue[]
   auth: Auth
   scripts?: Scripts
+  description?: string
 }
 
 export interface Variable extends KeyValue {
@@ -247,6 +261,33 @@ export interface Workspace {
   history: HistoryEntry[]
   cookies?: Cookie[]
   settings?: NetworkSettings
+  monitors?: Monitor[]
+}
+
+/** A collection run on a schedule while the app is open. */
+export interface Monitor {
+  id: string
+  name: string
+  collectionId: string
+  /** null = run with no environment. */
+  environmentId: string | null
+  intervalMinutes: number
+  enabled: boolean
+  notifyOnFailure: boolean
+  /** Newest first, capped. */
+  runs: MonitorRun[]
+}
+
+export interface MonitorRun {
+  id: string
+  startedAt: number
+  durationMs: number
+  requests: number
+  testsPassed: number
+  testsFailed: number
+  errors: number
+  /** Short descriptions of what failed, for the history view and notifications. */
+  failures: string[]
 }
 
 /** A request with every variable and inherited auth resolved — what the executor actually sends. */

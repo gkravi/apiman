@@ -9,7 +9,8 @@ import { WebSocketServer } from 'ws'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SseParser } from './sse'
 import { openSse, openWebSocket, type RealtimeSession } from './realtime'
-import { describeProto, openGrpc } from './grpc'
+import { describeGrpc, describeProto, openGrpc } from './grpc'
+import { ReflectionService } from '@grpc/reflection'
 import { newRequest } from './factory'
 import type { ApiRequest, RealtimeOpenInput, StreamEvent } from './types'
 
@@ -228,5 +229,59 @@ service Greeter {
     bs.end()
     await bidi.waitFor((e) => e.kind === 'close')
     expect(JSON.parse(bidi.events.find((e) => e.kind === 'message')!.data!)).toEqual({ text: 're: x' })
+  })
+})
+
+describe('gRPC server reflection', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'apiman-refl-'))
+  writeFileSync(join(dir, 'common.proto'), 'syntax = "proto3"; package shop.common; message Money { string currency = 1; int64 cents = 2; }')
+  writeFileSync(
+    join(dir, 'shop.proto'),
+    `syntax = "proto3"; package shop.v1; import "common.proto"; import "google/protobuf/timestamp.proto";
+     message Order { string id = 1; shop.common.Money total = 2; google.protobuf.Timestamp at = 3; }
+     message GetOrder { string id = 1; }
+     service Orders { rpc Get (GetOrder) returns (Order); }`
+  )
+  let reflServer: grpc.Server
+  let plainServer: grpc.Server
+  let reflPort = 0
+  let plainPort = 0
+  beforeAll(async () => {
+    const def = protoLoader.loadSync(join(dir, 'shop.proto'), { keepCase: true, longs: String, includeDirs: [dir] })
+    const pkg = grpc.loadPackageDefinition(def) as any
+    const impl = { Get: (call: any, cb: any) => cb(null, { id: call.request.id, total: { currency: 'EUR', cents: '1250' } }) }
+    reflServer = new grpc.Server()
+    reflServer.addService(pkg.shop.v1.Orders.service, impl)
+    new ReflectionService(def).addToServer(reflServer)
+    plainServer = new grpc.Server()
+    plainServer.addService(pkg.shop.v1.Orders.service, impl)
+    const bind = (srv: grpc.Server): Promise<number> =>
+      new Promise((resolve, reject) => srv.bindAsync('127.0.0.1:0', grpc.ServerCredentials.createInsecure(), (e, p) => (e ? reject(e) : resolve(p))))
+    reflPort = await bind(reflServer)
+    plainPort = await bind(plainServer)
+  })
+  afterAll(() => {
+    reflServer.forceShutdown()
+    plainServer.forceShutdown()
+  })
+
+  const req = (port: number, message = '{}'): ApiRequest =>
+    newRequest({ protocol: 'grpc', url: `grpc://127.0.0.1:${port}`, message, grpc: { source: 'reflection', protoFiles: [], includeDirs: [], service: 'shop.v1.Orders', method: 'Get' } })
+
+  it('discovers services, nested imports and well-known types without .proto files', async () => {
+    const [svc] = await describeGrpc(input(req(reflPort)))
+    expect(svc.name).toBe('shop.v1.Orders')
+    expect(svc.methods[0]).toMatchObject({ name: 'Get', requestType: 'shop.v1.GetOrder', responseType: 'shop.v1.Order', sample: { id: '' } })
+  })
+
+  it('calls a method using reflected definitions', async () => {
+    const c = collector()
+    await openGrpc(input(req(reflPort, '{"id":"A-1"}')), c.emit)
+    await c.waitFor((e) => e.kind === 'close')
+    expect(JSON.parse(c.events.find((e) => e.kind === 'message')!.data!)).toMatchObject({ id: 'A-1', total: { currency: 'EUR', cents: '1250' } })
+  })
+
+  it('explains when a server has no reflection', async () => {
+    await expect(describeGrpc(input(req(plainPort)))).rejects.toThrow('does not support gRPC reflection')
   })
 })

@@ -14,7 +14,7 @@ import { digestAuthorization } from './digest'
 import { signAwsV4 } from './awsv4'
 import type { ApiResponse, ExecuteResult, NetworkSettings, PreparedBody, PreparedRequest, Timings } from './types'
 
-const USER_AGENT = 'ApiMan/0.4'
+const USER_AGENT = 'ApiMan/0.5'
 const MAX_BODY_BYTES = 50 * 1024 * 1024
 
 export async function encodeBody(body: PreparedBody): Promise<{ data?: Buffer; contentType?: string }> {

@@ -6,22 +6,27 @@ import { basename } from 'node:path'
 import { parseArgs } from 'node:util'
 import { importPostmanCollection, importPostmanEnvironment, exportPostmanEnvironment, isPostmanCollection } from '@core/postman'
 import { importOpenApi, isOpenApi, parseSpecText } from '@core/openapi'
+import { generateDocsHtml } from '@core/docs'
 import { locate, runnableRequests, scriptChain } from '@core/tree'
 import { runCollection } from '@core/run'
 import { applyVarChanges, parseDataFile, toVarMap } from '@core/varsync'
 import { DEFAULT_NETWORK, type Collection, type Environment, type NetworkSettings, type RunnerRequestResult, type RunStep, type Variable } from '@core/types'
 import { createCliReporter, jsonReport, junitReport, type RunReport } from './reporters'
 
-const VERSION = '0.4.0'
+const VERSION = '0.5.0'
 
 const HELP = `apiman ${VERSION} — run API collections from the command line
 
 Usage:
   apiman run <collection> [options]
+  apiman docs <collection> [-o docs.html]
 
   <collection>  Postman collection (v2.0/v2.1) or OpenAPI/Swagger spec (JSON or YAML)
 
-Options:
+Options for docs:
+  -o, --output <file>             Where to write the HTML page (default: <collection name>.html)
+
+Options for run:
   -e, --environment <file>        Postman environment file
   -g, --globals <file>            Postman globals file
   -d, --iteration-data <file>     CSV or JSON data file (one iteration per row)
@@ -121,6 +126,7 @@ export async function main(argv: string[]): Promise<number> {
       'reporter-junit-export': { type: 'string', default: 'apiman-report.xml' },
       'export-environment': { type: 'string' },
       'export-globals': { type: 'string' },
+      output: { type: 'string', short: 'o' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' }
     }
@@ -135,7 +141,14 @@ export async function main(argv: string[]): Promise<number> {
     return positionals.length === 0 && !values.help ? 2 : 0
   }
   const [command, file] = positionals
-  if (command !== 'run' || !file) throw new UsageError(`Unknown command "${positionals.join(' ')}". Try: apiman run <collection>`)
+  if (command === 'docs' && file) {
+    const collection = await loadCollection(file)
+    const out = values.output ?? `${collection.name.replace(/[\\/:*?"<>|]+/g, '-')}.html`
+    await writeFile(out, generateDocsHtml(collection))
+    process.stdout.write(`Wrote ${out}\n`)
+    return 0
+  }
+  if (command !== 'run' || !file) throw new UsageError(`Unknown command "${positionals.join(' ')}". Try: apiman run <collection> or apiman docs <collection>`)
 
   const num = (v: string | undefined, flag: string): number | undefined => {
     if (v === undefined) return undefined

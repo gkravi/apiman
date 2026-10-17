@@ -33,11 +33,13 @@ const api: Api = {
     ipcRenderer.on('mock:log', listener)
     return () => ipcRenderer.removeListener('mock:log', listener)
   },
-  grpcDescribe: (files, includeDirs) => ipcRenderer.invoke('grpc:describe', files, includeDirs),
+  grpcDescribe: (input) => ipcRenderer.invoke('grpc:describe', input),
   openJson: () => ipcRenderer.invoke('dialog:openJson'),
   openDataFile: () => ipcRenderer.invoke('dialog:openData'),
   saveJson: (name, content) => ipcRenderer.invoke('dialog:saveJson', name, content),
-  saveBinary: (name, base64) => ipcRenderer.invoke('dialog:saveBinary', name, base64)
+  saveBinary: (name, base64) => ipcRenderer.invoke('dialog:saveBinary', name, base64),
+  saveText: (name, content, extensions) => ipcRenderer.invoke('dialog:saveText', name, content, extensions),
+  notify: (title, body) => ipcRenderer.invoke('notify', title, body)
 }
 
 contextBridge.exposeInMainWorld('api', api)

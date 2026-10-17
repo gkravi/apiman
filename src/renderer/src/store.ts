@@ -25,6 +25,8 @@ import type {
   RunVariables,
   TestResult,
   Workspace,
+  Monitor,
+  MonitorRun,
   StreamEvent,
   GrpcServiceInfo
 } from '@core/types'
@@ -91,7 +93,7 @@ export interface RunnerState {
   error?: string
 }
 
-export type SidebarView = 'collections' | 'environments' | 'history'
+export type SidebarView = 'collections' | 'environments' | 'history' | 'monitors'
 
 export type Modal =
   | { kind: 'import' }
@@ -104,6 +106,7 @@ export type Modal =
   | { kind: 'cookies'; domain?: string }
   | { kind: 'settings' }
   | { kind: 'mock'; collectionId: string }
+  | { kind: 'monitor'; monitorId: string | null }
   | { kind: 'prompt'; title: string; initial: string; onSubmit: (value: string) => void }
 
 interface State {
@@ -152,6 +155,13 @@ interface State {
   saveExample(tabId: string, name: string): void
   deleteExample(tabId: string, exampleId: string): void
   startMock(collectionId: string, port: number): Promise<void>
+  /** Ids of monitors currently running. */
+  monitorsRunning: string[]
+  saveMonitor(m: Monitor): void
+  deleteMonitor(id: string): void
+  runMonitor(id: string): Promise<void>
+  /** Called periodically: runs every enabled monitor that is due. */
+  tickMonitors(): void
   stopMock(collectionId: string): Promise<void>
 
   // collections
@@ -209,9 +219,13 @@ export function scopesFor(ws: Workspace, itemId: string | null): Scope[] {
   return [env?.variables ?? [], loc?.collection.variables ?? [], ws.globals]
 }
 
-/** Variables a run starts with: active environment, the tab's collection, globals. */
-function persistentVars(ws: Workspace, collectionId: string | undefined): Pick<RunVariables, 'environment' | 'collection' | 'globals'> {
-  const env = ws.environments.find((e) => e.id === ws.activeEnvironmentId)
+/** Variables a run starts with: an environment (the active one by default), the collection, globals. */
+function persistentVars(
+  ws: Workspace,
+  collectionId: string | undefined,
+  environmentId: string | null = ws.activeEnvironmentId
+): Pick<RunVariables, 'environment' | 'collection' | 'globals'> {
+  const env = ws.environments.find((e) => e.id === environmentId)
   const col = ws.collections.find((c) => c.id === collectionId)
   return { environment: toVarMap(env?.variables ?? []), collection: toVarMap(col?.variables ?? []), globals: toVarMap(ws.globals) }
 }
@@ -252,6 +266,18 @@ function runInputFor(ws: Workspace, tab: Tab, request: ApiRequest, withScripts =
   }
   return { input, before, loc }
 }
+
+/** Runner steps for a collection (or one folder), each with its inherited auth and scripts. */
+function collectionSteps(collection: Collection, folderId: string | null, only?: Set<string>): RunStep[] {
+  return runnableRequests(collection, folderId)
+    .filter((r) => !only || only.has(r.item.id))
+    .map(({ item, folders }) => {
+      const scripts = scriptChain(collection, folders, item.request)
+      return { request: item.request, parentAuths: [...folders.map((f) => f.auth), collection.auth], preRequestScripts: scripts.pre, testScripts: scripts.test }
+    })
+}
+
+const MONITOR_HISTORY = 50
 
 export function prepareTab(ws: Workspace, tab: Tab): PreparedRequest {
   const loc = tab.itemId ? locate(ws.collections, tab.itemId) : undefined
@@ -295,6 +321,7 @@ export const useStore = create<State>((set, get) => {
     schemas: {},
     grpc: {},
     mocks: {},
+    monitorsRunning: [],
 
     async init() {
       const workspace = await window.api.loadWorkspace()
@@ -497,10 +524,15 @@ export const useStore = create<State>((set, get) => {
       if (live) patchTab(tabId, { live: { ...live, events: [] } })
     },
     async loadProtos(tabId) {
-      const cfg = get().tabs.find((t) => t.id === tabId)?.draft.grpc
-      if (!cfg?.protoFiles.length) return set((s) => ({ grpc: { ...s.grpc, [tabId]: { loading: false } } }))
+      const tab = get().tabs.find((t) => t.id === tabId)
+      const cfg = tab?.draft.grpc
+      const reflection = cfg?.source === 'reflection'
+      if (!tab || !cfg || (reflection ? !tab.draft.url.trim() : !cfg.protoFiles.length)) {
+        return set((s) => ({ grpc: { ...s.grpc, [tabId]: { loading: false } } }))
+      }
       set((s) => ({ grpc: { ...s.grpc, [tabId]: { ...s.grpc[tabId], loading: true, error: undefined } } }))
-      const r = await window.api.grpcDescribe(cfg.protoFiles, cfg.includeDirs)
+      const { input } = runInputFor(get().workspace, tab, tab.draft, false)
+      const r = await window.api.grpcDescribe({ request: input.request, parentAuths: input.parentAuths, variables: input.variables, cookies: input.cookies, network: input.network })
       set((s) => ({ grpc: { ...s.grpc, [tabId]: r.ok ? { loading: false, services: r.services } : { loading: false, error: r.error } } }))
     },
     saveExample(tabId, name) {
@@ -594,18 +626,7 @@ export const useStore = create<State>((set, get) => {
       const ws = get().workspace
       const collection = ws.collections.find((c) => c.id === collectionId)
       if (!collection) return
-      const wanted = new Set(requestIds)
-      const steps: RunStep[] = runnableRequests(collection, folderId)
-        .filter((r) => wanted.has(r.item.id))
-        .map(({ item, folders }) => {
-          const scripts = scriptChain(collection, folders, item.request)
-          return {
-            request: item.request,
-            parentAuths: [...folders.map((f) => f.auth), collection.auth],
-            preRequestScripts: scripts.pre,
-            testScripts: scripts.test
-          }
-        })
+      const steps = collectionSteps(collection, folderId, new Set(requestIds))
       const runId = uid()
       const before = persistentVars(ws, collectionId)
       set({ runner: { runId, collectionId, folderId, status: 'running', results: [] } })
@@ -625,6 +646,71 @@ export const useStore = create<State>((set, get) => {
         set((s) => ({ runner: s.runner?.runId === runId ? { ...s.runner, status: 'done', error: (e as Error).message } : s.runner }))
       } finally {
         off()
+      }
+    },
+    saveMonitor(m) {
+      mutate((ws) => {
+        const list = ws.monitors ?? []
+        return { ...ws, monitors: list.some((x) => x.id === m.id) ? list.map((x) => (x.id === m.id ? m : x)) : [...list, m] }
+      })
+    },
+    deleteMonitor: (id) => mutate((ws) => ({ ...ws, monitors: (ws.monitors ?? []).filter((m) => m.id !== id) })),
+    async runMonitor(id) {
+      const ws = get().workspace
+      const monitor = ws.monitors?.find((m) => m.id === id)
+      const collection = ws.collections.find((c) => c.id === monitor?.collectionId)
+      if (!monitor || get().monitorsRunning.includes(id)) return
+      const record = (run: MonitorRun): void => {
+        mutate((w) => ({ ...w, monitors: (w.monitors ?? []).map((m) => (m.id === id ? { ...m, runs: [run, ...m.runs].slice(0, MONITOR_HISTORY) } : m)) }))
+        const failed = run.testsFailed + run.errors > 0
+        if (failed && monitor.notifyOnFailure) {
+          void window.api.notify(`Monitor failed: ${monitor.name}`, run.failures.slice(0, 3).join('\n') || `${run.testsFailed} failed tests, ${run.errors} errors`)
+        }
+      }
+      const startedAt = Date.now()
+      if (!collection) {
+        return record({ id: uid(), startedAt, durationMs: 0, requests: 0, testsPassed: 0, testsFailed: 0, errors: 1, failures: ['The collection no longer exists'] })
+      }
+      set((s) => ({ monitorsRunning: [...s.monitorsRunning, id] }))
+      const failures: string[] = []
+      const runId = uid()
+      const off = window.api.onRunnerResult((rid, r) => {
+        if (rid !== runId) return
+        if (r.error || r.scriptError) failures.push(`${r.name}: ${r.error ?? r.scriptError}`)
+        for (const t of r.tests) if (!t.passed) failures.push(`${r.name} — ${t.name}: ${t.error ?? 'failed'}`)
+      })
+      try {
+        // Monitors are hands-off: they never change your variables or cookies.
+        const { summary } = await window.api.startRunner(
+          runId,
+          collectionSteps(collection, null),
+          persistentVars(ws, collection.id, monitor.environmentId),
+          { iterations: 1, delayMs: 0, data: [], stopOnError: false },
+          { cookies: [], network: ws.settings }
+        )
+        record({
+          id: runId,
+          startedAt,
+          durationMs: summary.durationMs,
+          requests: summary.requests,
+          testsPassed: summary.testsPassed,
+          testsFailed: summary.testsFailed,
+          errors: summary.errors,
+          failures: failures.slice(0, 20)
+        })
+      } catch (e) {
+        record({ id: runId, startedAt, durationMs: Date.now() - startedAt, requests: 0, testsPassed: 0, testsFailed: 0, errors: 1, failures: [(e as Error).message] })
+      } finally {
+        off()
+        set((s) => ({ monitorsRunning: s.monitorsRunning.filter((x) => x !== id) }))
+      }
+    },
+    tickMonitors() {
+      const now = Date.now()
+      for (const m of get().workspace.monitors ?? []) {
+        if (!m.enabled) continue
+        const last = m.runs[0]?.startedAt ?? 0
+        if (now - last >= m.intervalMinutes * 60_000) void get().runMonitor(m.id)
       }
     },
     stopRunner() {

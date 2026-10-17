@@ -53,11 +53,14 @@ export interface Api {
   mockStop(collectionId: string): Promise<void>
   mockUpdate(collectionId: string, collection: Collection): Promise<void>
   onMockLog(cb: (collectionId: string, entry: MockLogEntry) => void): () => void
-  grpcDescribe(files: string[], includeDirs: string[]): Promise<{ ok: true; services: GrpcServiceInfo[] } | { ok: false; error: string }>
+  grpcDescribe(input: RealtimeOpenInput): Promise<{ ok: true; services: GrpcServiceInfo[] } | { ok: false; error: string }>
   openJson(): Promise<OpenedFile>
   openDataFile(): Promise<OpenedFile>
   saveJson(defaultName: string, content: string): Promise<boolean>
   saveBinary(defaultName: string, base64: string): Promise<boolean>
+  saveText(defaultName: string, content: string, extensions: string[]): Promise<boolean>
+  /** Desktop notification; clicking it focuses the app. */
+  notify(title: string, body: string): Promise<void>
 }
 
 declare global {

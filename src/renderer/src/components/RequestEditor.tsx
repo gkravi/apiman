@@ -15,8 +15,9 @@ import { ScriptsEditor } from './ScriptsEditor'
 import { GrpcServicePanel, MessageComposer } from './LiveEditors'
 import { grpcMethodOf } from '../format'
 import { ExamplesPanel } from './ExamplesPanel'
+import { DocsEditor } from './DocsEditor'
 
-type Section = 'params' | 'auth' | 'headers' | 'body' | 'scripts' | 'settings' | 'message' | 'service' | 'examples'
+type Section = 'params' | 'auth' | 'headers' | 'body' | 'scripts' | 'settings' | 'message' | 'service' | 'examples' | 'docs'
 
 const PROTOCOLS: { id: Protocol; label: string; placeholder: string }[] = [
   { id: 'http', label: 'HTTP', placeholder: 'Enter URL or paste a cURL command' },
@@ -27,10 +28,10 @@ const PROTOCOLS: { id: Protocol; label: string; placeholder: string }[] = [
 
 /** Tabs shown per protocol; the first one is where a freshly opened request starts. */
 const SECTION_ORDER: Record<Protocol, Section[]> = {
-  http: ['params', 'auth', 'headers', 'body', 'scripts', 'settings', 'examples'],
-  websocket: ['message', 'params', 'headers', 'auth', 'settings'],
-  sse: ['params', 'headers', 'auth', 'body', 'settings'],
-  grpc: ['message', 'service', 'headers', 'auth', 'settings']
+  http: ['params', 'auth', 'headers', 'body', 'scripts', 'settings', 'examples', 'docs'],
+  websocket: ['message', 'params', 'headers', 'auth', 'settings', 'docs'],
+  sse: ['params', 'headers', 'auth', 'body', 'settings', 'docs'],
+  grpc: ['message', 'service', 'headers', 'auth', 'settings', 'docs']
 }
 
 export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
@@ -77,7 +78,8 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
     body: 'Body',
     scripts: 'Scripts',
     settings: 'Settings',
-    examples: `Examples${count(r.examples?.length ?? 0)}`
+    examples: `Examples${count(r.examples?.length ?? 0)}`,
+    docs: 'Docs'
   }
   const order = SECTION_ORDER
   const sections = order[protocol].map((id) => ({ id, label: all[id] }))
@@ -203,6 +205,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
             {sec.id === 'body' && r.body.mode !== 'none' && <span className="dot" />}
             {sec.id === 'auth' && r.auth.type !== 'inherit' && r.auth.type !== 'none' && <span className="dot" />}
             {sec.id === 'scripts' && (r.scripts?.preRequest.trim() || r.scripts?.test.trim()) && <span className="dot" />}
+            {sec.id === 'docs' && r.description?.trim() && <span className="dot" />}
           </button>
         ))}
       </div>
@@ -211,6 +214,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
         {current === 'message' && <MessageComposer tab={tab} method={grpcMethod} />}
         {current === 'service' && <GrpcServicePanel tab={tab} />}
         {current === 'examples' && <ExamplesPanel tab={tab} />}
+        {current === 'docs' && <DocsEditor key={tab.id} value={r.description} onChange={(description) => update({ description })} placeholder="Describe what this request does, its parameters and responses…" />}
         {current === 'params' && (
           <>
             <div className="section-title">Query Params</div>

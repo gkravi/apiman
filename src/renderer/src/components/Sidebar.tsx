@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { newCollection, newEnvironment } from '@core/factory'
 import { exportPostmanCollection, exportPostmanEnvironment } from '@core/postman'
+import { generateDocsHtml } from '@core/docs'
 import type { CollectionItem, Collection } from '@core/types'
 import { useStore, type SidebarView } from '../store'
 import { MethodBadge } from './MethodBadge'
+import { MonitorsPanel } from './Monitors'
 
 function ItemMenu({ items }: { items: { label: string; onClick(): void; danger?: boolean }[] }): React.JSX.Element {
   const [open, setOpen] = useState(false)
@@ -73,7 +75,7 @@ function TreeItem({ item, collection, depth }: { item: CollectionItem; collectio
               label: 'Add folder',
               onClick: () => s.openModal({ kind: 'prompt', title: 'Folder name', initial: 'New Folder', onSubmit: (v) => s.addFolder(collection.id, item.id, v) })
             },
-            { label: 'Edit scripts & auth', onClick: () => s.openModal({ kind: 'folder', folderId: item.id }) },
+            { label: 'Edit scripts, auth & docs', onClick: () => s.openModal({ kind: 'folder', folderId: item.id }) },
             { label: 'Rename', onClick: () => rename(item.name) },
             { label: 'Duplicate', onClick: () => s.duplicateItem(item.id) },
             { label: 'Delete', danger: true, onClick: () => s.deleteItem(item.id) }
@@ -112,7 +114,15 @@ function CollectionNode({ collection }: { collection: Collection }): React.JSX.E
               label: 'Add folder',
               onClick: () => s.openModal({ kind: 'prompt', title: 'Folder name', initial: 'New Folder', onSubmit: (v) => s.addFolder(collection.id, null, v) })
             },
-            { label: 'Edit variables, auth & scripts', onClick: () => s.openModal({ kind: 'collection', collectionId: collection.id }) },
+            {
+              label: 'Export documentation (HTML)',
+              onClick: async () => {
+                const env = s.workspace.environments.find((e) => e.id === s.workspace.activeEnvironmentId)
+                const html = generateDocsHtml(collection, { subtitle: env ? `Environment: ${env.name}` : undefined })
+                if (await window.api.saveText(`${collection.name}.html`, html, ['html'])) s.showToast('Documentation exported')
+              }
+            },
+            { label: 'Edit variables, auth, scripts & docs', onClick: () => s.openModal({ kind: 'collection', collectionId: collection.id }) },
             {
               label: 'Rename',
               onClick: () => s.openModal({ kind: 'prompt', title: 'Rename collection', initial: collection.name, onSubmit: (v) => s.updateCollection(collection.id, { name: v }) })
@@ -266,7 +276,8 @@ function History(): React.JSX.Element {
 const VIEWS: { id: SidebarView; label: string; icon: string }[] = [
   { id: 'collections', label: 'Collections', icon: '🗂' },
   { id: 'environments', label: 'Environments', icon: '⚙︎' },
-  { id: 'history', label: 'History', icon: '⟲' }
+  { id: 'history', label: 'History', icon: '⟲' },
+  { id: 'monitors', label: 'Monitors', icon: '◷' }
 ]
 
 export function Sidebar(): React.JSX.Element {
@@ -285,6 +296,7 @@ export function Sidebar(): React.JSX.Element {
         {sidebar === 'collections' && <Collections />}
         {sidebar === 'environments' && <Environments />}
         {sidebar === 'history' && <History />}
+        {sidebar === 'monitors' && <MonitorsPanel />}
       </div>
     </aside>
   )

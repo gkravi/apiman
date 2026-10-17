@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { uid } from '@core/factory'
 import type { GrpcConfig, GrpcMethodInfo, StreamEvent } from '@core/types'
 import { useStore, type Tab } from '../store'
 import { CodeEditor } from './CodeEditor'
@@ -54,6 +55,7 @@ export function MessageComposer({ tab, method }: { tab: Tab; method?: GrpcMethod
       <div className="editor-box">
         <CodeEditor value={text} onChange={(message) => s.updateDraft(tab.id, { message })} language={isGrpc ? 'json' : lang} placeholder={isGrpc ? '{ }' : 'Message to send…'} />
       </div>
+      <SavedMessages tab={tab} canSend={open && !!streamingSend} />
       <div className="hint">
         {isGrpc
           ? method?.clientStreaming
@@ -67,15 +69,55 @@ export function MessageComposer({ tab, method }: { tab: Tab; method?: GrpcMethod
   )
 }
 
+/** Named messages saved with the request: click to load, ↑ to send straight away. */
+function SavedMessages({ tab, canSend }: { tab: Tab; canSend: boolean }): React.JSX.Element {
+  const s = useStore()
+  const saved = tab.draft.savedMessages ?? []
+  const text = tab.draft.message ?? ''
+  const save = (): void =>
+    s.openModal({
+      kind: 'prompt',
+      title: 'Save message as',
+      initial: text.trim().split('\n')[0].slice(0, 40) || 'Message',
+      onSubmit: (name) => s.updateDraft(tab.id, { savedMessages: [...saved.filter((m) => m.name !== name), { id: uid(), name, body: text }] })
+    })
+  return (
+    <div className="saved-messages">
+      <span className="muted small">Saved:</span>
+      {saved.length === 0 && <span className="muted small">none yet</span>}
+      {saved.map((m) => (
+        <span key={m.id} className="msg-chip" title={m.body}>
+          <button className="chip-load" onClick={() => s.updateDraft(tab.id, { message: m.body })}>
+            {m.name}
+          </button>
+          {canSend && (
+            <button className="chip-send" title="Send now" onClick={() => s.sendLive(tab.id, m.body)}>
+              ↑
+            </button>
+          )}
+          <button className="chip-del" title="Delete" onClick={() => s.updateDraft(tab.id, { savedMessages: saved.filter((x) => x.id !== m.id) })}>
+            ✕
+          </button>
+        </span>
+      ))}
+      <button className="btn small ghost" disabled={!text.trim()} onClick={save}>
+        + Save current
+      </button>
+    </div>
+  )
+}
+
 export function GrpcServicePanel({ tab }: { tab: Tab }): React.JSX.Element {
   const s = useStore()
   const cfg: GrpcConfig = tab.draft.grpc ?? { protoFiles: [], includeDirs: [], service: '', method: '' }
   const state = s.grpc[tab.id]
   const set = (patch: Partial<GrpcConfig>): void => s.updateDraft(tab.id, { grpc: { ...cfg, ...patch } })
-  const filesKey = cfg.protoFiles.join('|') + '#' + cfg.includeDirs.join('|')
+  const reflection = cfg.source === 'reflection'
+  // Proto files reload as soon as the list changes; reflection waits for an explicit Fetch (it's a network call).
+  const filesKey = reflection ? 'reflection' : cfg.protoFiles.join('|') + '#' + cfg.includeDirs.join('|')
 
   useEffect(() => {
-    void s.loadProtos(tab.id)
+    if (!reflection || !state) void s.loadProtos(tab.id)
     // Reload when the file list changes, not on every keystroke elsewhere in the draft.
   }, [filesKey])
 
@@ -90,6 +132,23 @@ export function GrpcServicePanel({ tab }: { tab: Tab }): React.JSX.Element {
 
   return (
     <div className="grpc-panel">
+      <div className="seg source-toggle">
+        <button className={!reflection ? 'active' : ''} onClick={() => set({ source: 'proto' })}>
+          Proto files
+        </button>
+        <button className={reflection ? 'active' : ''} onClick={() => set({ source: 'reflection' })}>
+          Server reflection
+        </button>
+      </div>
+      {reflection ? (
+        <div className="row-actions">
+          <button className="btn small" onClick={() => void s.loadProtos(tab.id)} disabled={state?.loading || !tab.draft.url.trim()}>
+            {state?.loading ? 'Asking server…' : state?.services ? 'Refresh from server' : 'Fetch services from server'}
+          </button>
+          <span className="muted small">Uses the URL, metadata, auth and TLS settings of this request.</span>
+        </div>
+      ) : (
+      <>
       <div className="section-title">Proto files</div>
       {cfg.protoFiles.map((f) => (
         <div key={f} className="proto-row">
@@ -133,6 +192,8 @@ export function GrpcServicePanel({ tab }: { tab: Tab }): React.JSX.Element {
           }
         />
       </label>
+      </>
+      )}
       {state?.error && <div className="error-msg">{state.error}</div>}
 
       {state?.services && (
@@ -162,7 +223,7 @@ export function GrpcServicePanel({ tab }: { tab: Tab }): React.JSX.Element {
         </div>
       )}
       {state?.services?.length === 0 && <div className="empty-hint">No services found in these files.</div>}
-      <p className="hint">Server reflection isn&apos;t supported yet: load the service&apos;s .proto files.</p>
+      {!reflection && <p className="hint">Server supports reflection? Switch to &quot;Server reflection&quot; to skip the .proto files.</p>}
     </div>
   )
 }

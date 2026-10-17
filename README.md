@@ -39,6 +39,8 @@ apiman run collection.json -e env.json -d data.csv -n 3 --folder Users \
   --export-environment env.after.json --bail
 ```
 
+`apiman docs collection.json -o api.html` writes the collection's HTML documentation page.
+
 It accepts Postman collections and OpenAPI/Swagger specs, supports `--proxy`, `--ca-cert`,
 `--ssl-client-cert/key/pfx`, `--insecure`, `--timeout-request`, `--delay-request`, and exits
 `0` (all passed), `1` (failed tests or request errors) or `2` (bad input). Run `apiman --help` for all flags.
@@ -64,6 +66,8 @@ src/
     graphql.ts     introspection request + schema building for autocomplete
     realtime.ts, sse.ts   WebSocket and Server-Sent Events sessions (Node only, except the SSE parser)
     grpc.ts        .proto loading, example messages, unary/streaming calls (Node only)
+    grpc-reflection.ts  server reflection client (v1, falling back to v1alpha) (Node only)
+    markdown.ts, docs.ts   safe Markdown renderer and the HTML documentation generator
     mockRoutes.ts, mock.ts   saved-example routing and the mock HTTP server (server is Node only)
     curl.ts        cURL import/export
     postman.ts     Postman Collection v2.0/2.1 + environment import/export
@@ -139,9 +143,21 @@ Not yet supported: `setTimeout` delays in scripts, `pm.cookies.jar()`.
   optional signing/notarisation
 
 Collection runs and the CLI skip WebSocket, SSE and gRPC requests (they need a live session).
-gRPC server reflection isn't supported yet — load the .proto files.
+
+## Phase 5 features (done)
+
+- **gRPC server reflection**: discover services and messages from the server (including imported
+  and well-known types) instead of loading .proto files
+- **Saved messages** for WebSocket and gRPC streams: save, load, or send with one click
+- **Documentation**: Markdown descriptions on requests, folders and collections (kept through
+  Postman import/export, filled from OpenAPI descriptions); export a self-contained HTML docs page
+  from the app or with `apiman docs`
+- **Monitors**: run a collection against an environment on a schedule while the app is open, with
+  run history, pass rate, failure details and desktop notifications. Monitor runs never change your
+  variables or cookies
+- Links clicked inside the app open in the system browser instead of replacing the app window
 
 ## Next ideas
 
-gRPC server reflection, WebSocket/Socket.IO message templates, team sync (shared workspaces),
-API documentation pages generated from collections, scheduled monitors.
+Team sync and shared workspaces (needs a hosted backend), Socket.IO, OAuth 2.0 device/implicit
+grants, request chaining visualiser, and CI templates for `apiman run`.

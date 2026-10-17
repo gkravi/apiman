@@ -10,9 +10,11 @@ import { CodeEditor } from './CodeEditor'
 import { KeyValueTable } from './KeyValueTable'
 import { AuthEditor } from './RequestEditor'
 import { ScriptsEditor } from './ScriptsEditor'
+import { DocsEditor } from './DocsEditor'
 import { RunnerModal } from './RunnerModal'
 import { CookiesModal, SettingsModal } from './SettingsModals'
 import { MockModal } from './MockModal'
+import { MonitorModal } from './Monitors'
 import { locate } from '@core/tree'
 
 function Shell({ title, onClose, children, wide, footer }: { title: string; onClose(): void; children: React.ReactNode; wide?: boolean; footer?: React.ReactNode }): React.JSX.Element {
@@ -313,7 +315,7 @@ function EnvironmentModal({ environmentId, close }: { environmentId: string | 'g
 
 function CollectionModal({ collectionId, close }: { collectionId: string; close(): void }): React.JSX.Element | null {
   const s = useStore()
-  const [section, setSection] = useState<'variables' | 'auth' | 'scripts'>('variables')
+  const [section, setSection] = useState<'variables' | 'auth' | 'scripts' | 'docs'>('variables')
   const c = s.workspace.collections.find((x) => x.id === collectionId)
   if (!c) return null
   return (
@@ -340,9 +342,14 @@ function CollectionModal({ collectionId, close }: { collectionId: string; close(
         <button className={`subtab ${section === 'scripts' ? 'active' : ''}`} onClick={() => setSection('scripts')}>
           Scripts
         </button>
+        <button className={`subtab ${section === 'docs' ? 'active' : ''}`} onClick={() => setSection('docs')}>
+          Docs
+        </button>
       </div>
       <div className="section-body modal-section">
-        {section === 'scripts' ? (
+        {section === 'docs' ? (
+          <DocsEditor value={c.description} onChange={(description) => s.updateCollection(c.id, { description })} placeholder="Introduce the API: what it's for, how to authenticate, conventions…" />
+        ) : section === 'scripts' ? (
           <>
             <p className="hint">These run around every request in the collection, before folder and request scripts.</p>
             <ScriptsEditor scripts={c.scripts} onChange={(scripts) => s.updateCollection(c.id, { scripts })} scopeLabel="collection's requests" />
@@ -365,7 +372,7 @@ function CollectionModal({ collectionId, close }: { collectionId: string; close(
 
 function FolderModal({ folderId, close }: { folderId: string; close(): void }): React.JSX.Element | null {
   const s = useStore()
-  const [section, setSection] = useState<'auth' | 'scripts'>('scripts')
+  const [section, setSection] = useState<'auth' | 'scripts' | 'docs'>('scripts')
   const loc = locate(s.workspace.collections, folderId)
   if (!loc || loc.item.type !== 'folder') return null
   const folder = loc.item
@@ -390,9 +397,14 @@ function FolderModal({ folderId, close }: { folderId: string; close(): void }): 
         <button className={`subtab ${section === 'auth' ? 'active' : ''}`} onClick={() => setSection('auth')}>
           Authorization
         </button>
+        <button className={`subtab ${section === 'docs' ? 'active' : ''}`} onClick={() => setSection('docs')}>
+          Docs
+        </button>
       </div>
       <div className="section-body modal-section">
-        {section === 'scripts' ? (
+        {section === 'docs' ? (
+          <DocsEditor value={folder.description} onChange={(description) => s.updateFolder(folderId, { description })} placeholder="Describe this group of requests…" />
+        ) : section === 'scripts' ? (
           <>
             <p className="hint">Folder scripts run after the collection&apos;s and before each request&apos;s own.</p>
             <ScriptsEditor scripts={folder.scripts} onChange={(scripts) => s.updateFolder(folderId, { scripts })} scopeLabel="folder's requests" />
@@ -461,5 +473,7 @@ export function ModalHost(): React.JSX.Element | null {
       return <SettingsModal close={close} />
     case 'mock':
       return <MockModal collectionId={modal.collectionId} close={close} />
+    case 'monitor':
+      return <MonitorModal monitorId={modal.monitorId} close={close} />
   }
 }
