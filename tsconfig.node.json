@@ -13,7 +13,8 @@
       "@core/*": [
         "./src/core/*"
       ]
-    }
+    },
+    "resolveJsonModule": true
   },
   "include": [
     "electron.vite.config.ts",

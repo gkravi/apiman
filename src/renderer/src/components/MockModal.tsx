@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { buildRoutes } from '@core/mockRoutes'
 import { useStore } from '../store'
+import { useEscape } from '../useEscape'
 import { MethodBadge } from './MethodBadge'
 
 export function MockModal({ collectionId, close }: { collectionId: string; close(): void }): React.JSX.Element | null {
@@ -9,6 +10,7 @@ export function MockModal({ collectionId, close }: { collectionId: string; close
   const mock = s.mocks[collectionId]
   const [port, setPort] = useState(mock?.port ?? 4010)
   const routes = useMemo(() => (collection ? buildRoutes(collection) : []), [collection])
+  useEscape(close)
   if (!collection) return null
   const running = mock?.status === 'running'
   const base = `http://127.0.0.1:${mock?.port ?? port}`

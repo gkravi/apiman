@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { uid } from '@core/factory'
 import type { Monitor, MonitorRun } from '@core/types'
 import { useStore } from '../store'
+import { useEscape } from '../useEscape'
 
 const INTERVALS: [number, string][] = [
   [5, 'Every 5 minutes'],
@@ -73,6 +74,7 @@ export function MonitorModal({ monitorId, close }: { monitorId: string | null; c
   // A new monitor's id is fixed up front, so once saved the dialog keeps showing it (and its runs).
   const existing = ws.monitors?.find((m) => m.id === (monitorId ?? draft.id))
   const [editing, setEditing] = useState(!monitorId)
+  useEscape(close)
   const live = existing ?? draft
   const running = s.monitorsRunning.includes(live.id)
   const set = <K extends keyof Monitor>(k: K, v: Monitor[K]): void => setDraft({ ...draft, [k]: v })
@@ -185,7 +187,7 @@ export function MonitorModal({ monitorId, close }: { monitorId: string | null; c
                         ))}
                       </ul>
                     ) : (
-                      <div className="muted small mon-failures">Everything passed.</div>
+                      <div className="mon-allpass small">Everything passed.</div>
                     )}
                   </details>
                 ))}

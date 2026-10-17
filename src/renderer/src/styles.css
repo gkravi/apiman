@@ -1980,3 +1980,11 @@ select.cell.small {
   color: var(--danger);
   user-select: text;
 }
+
+.mon-allpass {
+  margin: 6px 0 4px 20px;
+  color: var(--ok);
+}
+.oauth2 > .check {
+  margin-bottom: 10px;
+}

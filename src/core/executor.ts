@@ -12,9 +12,11 @@ import tls from 'node:tls'
 import { CookieJar } from './cookies'
 import { digestAuthorization } from './digest'
 import { signAwsV4 } from './awsv4'
+import pkg from '../../package.json'
 import type { ApiResponse, ExecuteResult, NetworkSettings, PreparedBody, PreparedRequest, Timings } from './types'
 
-const USER_AGENT = 'ApiMan/0.5'
+// The version comes from package.json at build time, so releases only bump it there.
+const USER_AGENT = `ApiMan/${pkg.version}`
 const MAX_BODY_BYTES = 50 * 1024 * 1024
 
 export async function encodeBody(body: PreparedBody): Promise<{ data?: Buffer; contentType?: string }> {

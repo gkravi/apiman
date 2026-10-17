@@ -282,6 +282,18 @@ export const PRELUDE = String.raw`
     '$randomInt': function () { return String(Math.floor(Math.random() * 1001)); }
   };
   DYNAMIC['$randomUUID'] = DYNAMIC['$guid'];
+  // Same set as {{$…}} in requests (core/variables.ts), so replaceIn and requests agree.
+  var WORDS = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel'];
+  var FIRST = ['Ada', 'Grace', 'Alan', 'Linus', 'Margaret', 'Dennis', 'Barbara', 'Ken'];
+  var LAST = ['Lovelace', 'Hopper', 'Turing', 'Torvalds', 'Hamilton', 'Ritchie', 'Liskov', 'Thompson'];
+  function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
+  DYNAMIC['$randomBoolean'] = function () { return String(Math.random() < 0.5); };
+  DYNAMIC['$randomWord'] = function () { return pick(WORDS); };
+  DYNAMIC['$randomFirstName'] = function () { return pick(FIRST); };
+  DYNAMIC['$randomLastName'] = function () { return pick(LAST); };
+  DYNAMIC['$randomFullName'] = function () { return pick(FIRST) + ' ' + pick(LAST); };
+  DYNAMIC['$randomEmail'] = function () { return pick(FIRST).toLowerCase() + '.' + pick(LAST).toLowerCase() + Math.floor(Math.random() * 100) + '@example.com'; };
+  DYNAMIC['$randomColor'] = function () { return pick(['red', 'green', 'blue', 'yellow', 'purple', 'orange']); };
   function replaceIn(input) {
     var out = String(input);
     for (var pass = 0; pass < 10; pass++) {

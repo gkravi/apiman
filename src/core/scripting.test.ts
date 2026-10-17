@@ -69,6 +69,14 @@ describe('sandbox', () => {
     ])
   })
 
+  it('supports every dynamic variable in replaceIn', async () => {
+    const names = ['$guid', '$randomUUID', '$timestamp', '$isoTimestamp', '$randomInt', '$randomBoolean', '$randomWord', '$randomFirstName', '$randomLastName', '$randomFullName', '$randomEmail', '$randomColor']
+    const out = await runScript(`console.log(JSON.stringify(${JSON.stringify(names)}.map((n) => pm.variables.replaceIn('{{' + n + '}}'))))`, ctx())
+    const values: string[] = JSON.parse(out.console[0].message)
+    values.forEach((v, i) => expect(v, names[i]).not.toBe(`{{${names[i]}}}`))
+    expect(values[11]).toMatch(/^(red|green|blue|yellow|purple|orange)$/)
+  })
+
   it('lets pre-request scripts edit the request', async () => {
     const out = await runScript(
       `
@@ -164,6 +172,20 @@ describe('runRequest + runner', () => {
     expect(r.tests.every((t) => t.passed)).toBe(true)
     expect(r.variables.environment.token).toBe('tok-123')
     expect(r.sent?.headers).toContainEqual(['Authorization', 'Bearer tok-123'])
+  })
+
+  it('supports top-level await with pm.sendRequest and reports errors thrown after it', async () => {
+    const r = await runRequest({
+      request: newRequest({ url: `${base}/me`, auth: { type: 'bearer', token: '{{token}}' } }),
+      parentAuths: [],
+      preRequestScripts: [`const res = await pm.sendRequest(pm.variables.replaceIn('{{base}}/login'));\npm.environment.set('token', res.json().token);`],
+      testScripts: [`await Promise.resolve();\npm.test('ok', () => pm.response.to.have.status(200));\nnotDefined();`],
+      variables: vars({ environment: { base } }),
+      info
+    })
+    expect(r.variables.environment.token).toBe('tok-123')
+    expect(r.tests).toEqual([{ name: 'ok', passed: true }])
+    expect(r.scriptError).toBe("Test script: ReferenceError: 'notDefined' is not defined (line 3)")
   })
 
   it('does not send when a pre-request script throws', async () => {

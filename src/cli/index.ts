@@ -1,19 +1,20 @@
 // apiman — run collections from the command line (CI-friendly, Newman-style).
 // Uses the exact same core as the desktop app: executor, sandbox, runner, cookie jar.
 
-import { readFile, writeFile } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { mkdir, readFile, writeFile as writeFileRaw } from 'node:fs/promises'
+import { basename, dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { importPostmanCollection, importPostmanEnvironment, exportPostmanEnvironment, isPostmanCollection } from '@core/postman'
 import { importOpenApi, isOpenApi, parseSpecText } from '@core/openapi'
 import { generateDocsHtml } from '@core/docs'
+import pkg from '../../package.json'
 import { locate, runnableRequests, scriptChain } from '@core/tree'
 import { runCollection } from '@core/run'
 import { applyVarChanges, parseDataFile, toVarMap } from '@core/varsync'
 import { DEFAULT_NETWORK, type Collection, type Environment, type NetworkSettings, type RunnerRequestResult, type RunStep, type Variable } from '@core/types'
 import { createCliReporter, jsonReport, junitReport, type RunReport } from './reporters'
 
-const VERSION = '0.5.0'
+const VERSION = pkg.version
 
 const HELP = `apiman ${VERSION} — run API collections from the command line
 
@@ -58,6 +59,12 @@ Exit codes: 0 all passed · 1 failed tests or request errors · 2 usage or input
 `
 
 class UsageError extends Error {}
+
+/** Write an output file, creating its folder first (CI paths like reports/junit.xml often don't exist yet). */
+async function writeFile(path: string, content: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFileRaw(path, content)
+}
 
 function keyValues(list: string[] | undefined, flag: string): Record<string, string> {
   const out: Record<string, string> = {}
@@ -270,7 +277,9 @@ if (process.env.APIMAN_CLI_NO_AUTORUN !== '1') {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (err) => {
-      process.stderr.write(`apiman: ${err instanceof UsageError ? err.message : (err as Error).stack}\n`)
+      // Bad flags from node:util parseArgs are usage errors too, not crashes.
+      const usage = err instanceof UsageError || String((err as NodeJS.ErrnoException).code ?? '').startsWith('ERR_PARSE_ARGS')
+      process.stderr.write(`apiman: ${usage ? `${(err as Error).message}\nRun apiman --help for usage.` : (err as Error).stack}\n`)
       process.exit(2)
     }
   )

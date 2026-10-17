@@ -151,8 +151,10 @@ export async function runScript(code: string, sc: ScriptContext, options: Sandbo
     evalOrThrow(PRELUDE, 'prelude.js')
 
     try {
-      // Wrapped in a function like Postman, so a top-level `return` is allowed.
-      evalOrThrow(`(function () {\n${code}\n})();`, '<script>')
+      // Wrapped in an async function like Postman, so top-level `return` and `await` both work.
+      // Errors thrown after an await reject the promise instead of escaping evalCode, so they're
+      // parked on a global and re-thrown below. (User code starts on line 2 either way.)
+      evalOrThrow(`globalThis.__main = (async function () {\n${code}\n})(); __main.catch(function (e) { globalThis.__mainError = e; });`, '<script>')
       drainJobs()
 
       // Serve pm.sendRequest calls; callbacks may issue more, so loop until quiet.
@@ -172,6 +174,10 @@ export async function runScript(code: string, sc: ScriptContext, options: Sandbo
           drainJobs()
         }
       }
+
+      const mainError = ctx.getProp(ctx.global, '__mainError')
+      if (ctx.typeof(mainError) !== 'undefined') throw new Error(errorMessage(ctx, mainError))
+      mainError.dispose()
     } catch (e) {
       outcome.error = (e as Error).message
     }

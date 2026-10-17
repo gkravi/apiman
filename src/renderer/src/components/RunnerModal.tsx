@@ -3,6 +3,7 @@ import { runnableRequests } from '@core/tree'
 import { parseDataFile } from '@core/varsync'
 import type { RunnerRequestResult, VarMap } from '@core/types'
 import { useStore } from '../store'
+import { useEscape } from '../useEscape'
 import { MethodBadge } from './MethodBadge'
 import { formatBytes } from '../format'
 
@@ -59,6 +60,7 @@ export function RunnerModal({ collectionId, folderId, close }: { collectionId: s
   const [data, setData] = useState<{ name: string; rows: VarMap[] } | null>(null)
   const [dataError, setDataError] = useState('')
   const [onlyFailed, setOnlyFailed] = useState(false)
+  useEscape(close)
 
   if (!collection) return null
   const runner = s.runner && s.runner.collectionId === collectionId && s.runner.folderId === folderId ? s.runner : null
