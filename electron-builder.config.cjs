@@ -21,6 +21,7 @@ module.exports = {
   asarUnpack: ['node_modules/@jitl/quickjs-wasmfile-*/**'],
   mac: {
     category: 'public.app-category.developer-tools',
+    // Architectures come from the command line (`--arm64 --x64` in CI); locally the host arch is built.
     target: [{ target: 'dmg' }, { target: 'zip' }],
     hardenedRuntime: true,
     entitlements: 'build/entitlements.mac.plist',
@@ -30,6 +31,6 @@ module.exports = {
   dmg: { artifactName: '${productName}-${version}-${arch}.${ext}' },
   win: { target: [{ target: 'nsis', arch: ['x64', 'arm64'] }] },
   nsis: { oneClick: false, allowToChangeInstallationDirectory: true, artifactName: '${productName}-Setup-${version}-${arch}.${ext}' },
-  linux: { target: ['AppImage', 'deb'], category: 'Development', maintainer: 'ravi <17067993+gkravi@users.noreply.github.com>' },
+  linux: { target: ['AppImage', 'deb'], category: 'Development', maintainer: 'ravi <17067993+gkravi@users.noreply.github.com>', synopsis: 'API client for HTTP, GraphQL, WebSocket, SSE and gRPC' },
   publish: null
 }

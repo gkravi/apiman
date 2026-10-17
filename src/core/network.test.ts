@@ -82,6 +82,7 @@ describe('executor network features', () => {
           if (!clientOk) return res.writeHead(401).end(JSON.stringify({ error: 'invalid_client' }))
           const g = f.get('grant_type')
           if (g === 'password' && f.get('password') !== 'pw') return res.writeHead(400).end(JSON.stringify({ error: 'invalid_grant', error_description: 'bad password' }))
+          if (g === 'refresh_token' && f.has('scope')) return res.writeHead(400).end(JSON.stringify({ error: 'invalid_scope', error_description: 'scope must not be sent on refresh' }))
           res.end(JSON.stringify({ access_token: `at-${g}`, token_type: 'Bearer', expires_in: 3600, ...(g !== 'refresh_token' ? { refresh_token: 'rt-1' } : {}), scope: f.get('scope') }))
         })
         return

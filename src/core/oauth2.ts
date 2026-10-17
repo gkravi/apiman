@@ -87,7 +87,9 @@ export const exchangeCode = (cfg: OAuth2Config, code: string, verifier?: string,
 
 export function refreshToken(cfg: OAuth2Config, opts?: ExecuteOptions): Promise<OAuth2TokenResult> {
   if (!cfg.refreshToken) return Promise.reject(new Error('No refresh token stored'))
-  return tokenRequest(cfg, withScope(cfg, { grant_type: 'refresh_token', refresh_token: cfg.refreshToken }), opts).then((t) => ({
+  // No scope: RFC 6749 §6 keeps the originally granted scope, and re-sending a wider configured
+  // scope makes strict servers reject the refresh with invalid_scope.
+  return tokenRequest(cfg, { grant_type: 'refresh_token', refresh_token: cfg.refreshToken }, opts).then((t) => ({
     ...t,
     refreshToken: t.refreshToken ?? cfg.refreshToken // many servers don't rotate refresh tokens
   }))

@@ -28,6 +28,23 @@ and AppImage/deb on Linux. Builds are unsigned unless credentials are in the env
 
 Unsigned macOS builds open with right-click → Open the first time.
 
+### CI and releases (GitHub Actions)
+
+- `.github/workflows/ci.yml` — on every push/PR: typecheck, tests and build on Ubuntu and macOS,
+  typecheck + build on Windows (the TLS tests need openssl), plus a CLI smoke test.
+- `.github/workflows/release.yml` — push a tag like `v0.5.0` to build macOS (arm64 + x64), Windows
+  and Linux installers and attach them to a **draft** GitHub release.
+
+Signing in CI is optional; add these repository secrets to turn it on:
+
+| Secret | What |
+|---|---|
+| `MAC_CSC_LINK` / `MAC_CSC_KEY_PASSWORD` | base64 of a *Developer ID Application* `.p12` and its password |
+| `APPLE_API_KEY_BASE64` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` | App Store Connect API key (`.p8`, base64) for notarisation |
+| `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` | base64 of a Windows code-signing `.pfx` and its password |
+
+`base64 -i cert.p12 | pbcopy` produces the value for a `*_LINK` secret.
+
 ## CLI
 
 `npm run build` also produces `out/cli/apiman.cjs` (exposed as the `apiman` bin), a Newman-style
