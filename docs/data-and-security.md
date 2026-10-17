@@ -21,7 +21,7 @@ same folder, separate from the main app.
 
 ### Secrets
 
-Values marked secret 🔒, tokens, passwords and client-certificate passphrases are **stored in plain
+Values marked secret (lock icon), tokens, passwords and client-certificate passphrases are **stored in plain
 text** in `workspace.json` — the secret flag only masks them in the interface. Protect the file as
 you would any credentials file: full-disk encryption (FileVault/BitLocker), and don't commit or share
 it. When you share work, export collections and environments instead, and review them for secrets first.

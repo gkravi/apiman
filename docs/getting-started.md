@@ -63,7 +63,7 @@ optionally a folder. Saved requests appear in the sidebar; edits show a dot on t
 
 | Area | What it does |
 |---|---|
-| **Top bar** | New tab, Import, the cookie manager, Settings (proxy and certificates), and the active environment picker with its 👁 editor |
+| **Top bar** | New tab, Import, the cookie manager, Settings (proxy and certificates), and the active environment picker with its eye button for editing it |
 | **Sidebar rail** | Switch between **Collections**, **Environments**, **History** and **Monitors** |
 | **Tab bar** | Open requests. A dot means unsaved changes; middle-click closes a tab |
 | **Request editor** | Protocol, method and URL, then tabs for Params, Authorization, Headers, Body, Scripts, Settings, Examples and Docs |

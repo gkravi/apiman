@@ -1,23 +1,26 @@
 <p align="center">
-  <img src="docs/images/icon.png" width="96" height="96" alt="ApiMan icon">
+  <img src="docs/images/banner.png" alt="ApiMan — the API client for every protocol: HTTP, GraphQL, WebSocket, SSE and gRPC" width="100%">
 </p>
 
-<h1 align="center">ApiMan</h1>
+<p align="center">
+  <a href="https://github.com/gkravi/apiman/actions/workflows/ci.yml"><img src="https://github.com/gkravi/apiman/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/gkravi/apiman/releases/latest"><img src="https://img.shields.io/github/v/release/gkravi/apiman?color=5b3df5&label=release" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/gkravi/apiman?color=3b6ef6" alt="MIT license"></a>
+  <a href="https://gkravi.github.io/apiman/"><img src="https://img.shields.io/badge/docs-gkravi.github.io%2Fapiman-0fb5d9" alt="Documentation"></a>
+</p>
 
 <p align="center">
-  A desktop API client for HTTP, GraphQL, WebSocket, Server-Sent Events and gRPC —<br>
+  <b>Build, test, automate and document APIs</b> — HTTP, GraphQL, WebSocket, Server-Sent Events and gRPC,<br>
   with scripting, tests, a collection runner, mock servers, monitors and a CLI.<br>
   Local-first: no account, no cloud, your data stays on your machine.
 </p>
 
 <p align="center">
   <a href="https://github.com/gkravi/apiman/releases/latest"><b>Download</b></a> ·
-  <a href="docs/getting-started.md">Getting started</a> ·
+  <a href="https://gkravi.github.io/apiman/getting-started/">Getting started</a> ·
   <a href="https://gkravi.github.io/apiman/">Documentation</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
-
-![ApiMan](docs/images/request.png)
 
 ## Features
 

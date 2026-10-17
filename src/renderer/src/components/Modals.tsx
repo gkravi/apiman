@@ -10,6 +10,7 @@ import { CodeEditor } from './CodeEditor'
 import { KeyValueTable } from './KeyValueTable'
 import { AuthEditor } from './RequestEditor'
 import { ScriptsEditor } from './ScriptsEditor'
+import { EyeIcon, LockIcon, UnlockIcon } from './Icons'
 import { DocsEditor } from './DocsEditor'
 import { RunnerModal } from './RunnerModal'
 import { CookiesModal, SettingsModal } from './SettingsModals'
@@ -270,7 +271,7 @@ function VariablesTable({ rows, onChange }: { rows: Variable[]; onChange(rows: V
               up({ secret: !row.secret })
             }}
           >
-            {row.secret ? (reveal[row.id] ? '👁' : '🔒') : '🔓'}
+            {row.secret ? reveal[row.id] ? <EyeIcon size={14} /> : <LockIcon size={14} /> : <UnlockIcon size={14} />}
           </button>
         </div>
       )}
@@ -305,7 +306,7 @@ function EnvironmentModal({ environmentId, close }: { environmentId: string | 'g
       }
     >
       <p className="hint">
-        Use variables as <code>{'{{name}}'}</code> in URLs, headers, bodies and auth. Changes save automatically. Click 🔓 to mark a value as secret
+        Use variables as <code>{'{{name}}'}</code> in URLs, headers, bodies and auth. Changes save automatically. Click the lock to mark a value as secret
         (right-click to unmark).
       </p>
       <VariablesTable rows={rows} onChange={(v) => (isGlobals ? s.updateGlobals(v) : s.updateEnvironment(environmentId, { variables: v }))} />

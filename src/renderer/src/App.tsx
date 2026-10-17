@@ -7,6 +7,8 @@ import { ResponseViewer } from './components/ResponseViewer'
 import { ModalHost } from './components/Modals'
 import { ConsolePanel } from './components/ConsolePanel'
 import { LiveViewer } from './components/LiveEditors'
+import { Logo } from './components/Logo'
+import { CookieIcon, EyeIcon, ImportIcon, PlusIcon, SettingsIcon } from './components/Icons'
 
 function EnvironmentSelect(): React.JSX.Element {
   const s = useStore()
@@ -26,7 +28,7 @@ function EnvironmentSelect(): React.JSX.Element {
         title="Edit environment"
         onClick={() => s.openModal({ kind: 'environment', environmentId: ws.activeEnvironmentId ?? 'globals' })}
       >
-        👁
+        <EyeIcon />
       </button>
     </div>
   )
@@ -110,20 +112,20 @@ export function App(): React.JSX.Element {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <span className="logo">◉</span> ApiMan
+          <Logo size={22} /> ApiMan
         </div>
-        <button className="btn small" onClick={() => s.newTab()}>
-          New
+        <button className="btn small" onClick={() => s.newTab()} title="New request (⌘T)">
+          <PlusIcon size={14} /> New
         </button>
-        <button className="btn small" onClick={() => s.openModal({ kind: 'import' })}>
-          Import
+        <button className="btn small" onClick={() => s.openModal({ kind: 'import' })} title="Import (⌘O)">
+          <ImportIcon size={14} /> Import
         </button>
         <span className="spacer" />
         <button className="btn small ghost" onClick={() => s.openModal({ kind: 'cookies' })}>
-          Cookies
+          <CookieIcon size={14} /> Cookies
         </button>
         <button className="btn small ghost" onClick={() => s.openModal({ kind: 'settings' })} title="Proxy & certificates">
-          ⚙ Settings
+          <SettingsIcon size={14} /> Settings
         </button>
         <EnvironmentSelect />
       </header>

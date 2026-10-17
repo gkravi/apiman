@@ -21,7 +21,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     title: 'ApiMan',
-    backgroundColor: '#1e1f22',
+    backgroundColor: '#15161c',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

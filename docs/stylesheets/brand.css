@@ -1,0 +1,55 @@
+/* ApiMan brand for the documentation site (Material for MkDocs). Colours match build/icon.svg. */
+:root,
+[data-md-color-scheme='default'] {
+  --md-primary-fg-color: #4f45f0;
+  --md-primary-fg-color--light: #7c6cff;
+  --md-primary-fg-color--dark: #3b2fd6;
+  --md-accent-fg-color: #3b6ef6;
+  --md-typeset-a-color: #4f45f0;
+  --apiman-gradient: linear-gradient(120deg, #5b3df5 0%, #3b6ef6 55%, #0fb5d9 100%);
+}
+
+[data-md-color-scheme='slate'] {
+  --md-default-bg-color: #15161c;
+  --md-default-fg-color--light: #a4a9bb;
+  --md-primary-fg-color: #7c6cff;
+  --md-accent-fg-color: #5fd3f3;
+  --md-typeset-a-color: #9b8bff;
+  --md-code-bg-color: #1b1d25;
+}
+
+/* Gradient header and tabs, as in the app. */
+.md-header,
+.md-tabs {
+  background: var(--apiman-gradient);
+}
+
+.md-header__title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.md-header__button.md-logo img {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.25));
+}
+
+/* Slightly tighter, more modern headings. */
+.md-typeset h1 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.md-typeset h2 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Screenshots: rounded with a soft shadow. */
+.md-typeset img[src*='images/']:not([src$='.svg']) {
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(15, 16, 22, 0.25);
+}
+
+.md-typeset img[src$='banner.png'] {
+  box-shadow: none;
+}

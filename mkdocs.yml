@@ -11,20 +11,23 @@ copyright: MIT License © 2026 ravi
 
 theme:
   name: material
-  logo: images/icon.png
-  favicon: images/icon.png
+  logo: images/logo.svg
+  favicon: images/logo.svg
+  font:
+    text: Inter
+    code: JetBrains Mono
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep orange
-      accent: deep orange
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep orange
-      accent: deep orange
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -66,6 +69,16 @@ nav:
   - Developers:
       - Architecture: development/architecture.md
       - Releasing: development/releasing.md
+
+extra_css:
+  - stylesheets/brand.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/gkravi/apiman
+    - icon: material/download
+      link: https://github.com/gkravi/apiman/releases/latest
 
 markdown_extensions:
   - tables

@@ -6,6 +6,7 @@ import type { CollectionItem, Collection } from '@core/types'
 import { useStore, type SidebarView } from '../store'
 import { MethodBadge } from './MethodBadge'
 import { MonitorsPanel } from './Monitors'
+import { CollectionsIcon, EnvironmentsIcon, FolderIcon, HistoryIcon, MonitorsIcon } from './Icons'
 
 function ItemMenu({ items }: { items: { label: string; onClick(): void; danger?: boolean }[] }): React.JSX.Element {
   const [open, setOpen] = useState(false)
@@ -65,7 +66,7 @@ function TreeItem({ item, collection, depth }: { item: CollectionItem; collectio
     <>
       <div className="tree-row" style={pad} onClick={() => setOpen(!open)}>
         <span className="caret">{open ? '▾' : '▸'}</span>
-        <span className="folder-icon">📁</span>
+        <FolderIcon className="folder-icon" size={14} />
         <span className="tree-label">{item.name}</span>
         <ItemMenu
           items={[
@@ -205,7 +206,7 @@ function Environments(): React.JSX.Element {
       </div>
       <div className="sidebar-scroll">
         <div className="tree-row" onClick={() => s.openModal({ kind: 'environment', environmentId: 'globals' })}>
-          <span className="env-dot globe">🌐</span>
+          <EnvironmentsIcon className="globe-icon" size={13} />
           <span className="tree-label">Globals</span>
           <span className="muted small">{ws.globals.length}</span>
         </div>
@@ -273,11 +274,11 @@ function History(): React.JSX.Element {
   )
 }
 
-const VIEWS: { id: SidebarView; label: string; icon: string }[] = [
-  { id: 'collections', label: 'Collections', icon: '🗂' },
-  { id: 'environments', label: 'Environments', icon: '⚙︎' },
-  { id: 'history', label: 'History', icon: '⟲' },
-  { id: 'monitors', label: 'Monitors', icon: '◷' }
+const VIEWS: { id: SidebarView; label: string; icon: React.ReactNode }[] = [
+  { id: 'collections', label: 'Collections', icon: <CollectionsIcon size={18} /> },
+  { id: 'environments', label: 'Environments', icon: <EnvironmentsIcon size={18} /> },
+  { id: 'history', label: 'History', icon: <HistoryIcon size={18} /> },
+  { id: 'monitors', label: 'Monitors', icon: <MonitorsIcon size={18} /> }
 ]
 
 export function Sidebar(): React.JSX.Element {

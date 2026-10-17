@@ -1,9 +1,9 @@
 # ApiMan documentation
 
+![ApiMan — the API client for every protocol](images/banner.png)
+
 ApiMan is a desktop API client for building, testing, automating and documenting APIs. It speaks
 HTTP, GraphQL, WebSocket, Server-Sent Events and gRPC, and runs on macOS, Windows and Linux.
-
-![ApiMan main window](images/request.png)
 
 ## User guide
 

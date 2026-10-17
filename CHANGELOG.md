@@ -4,6 +4,13 @@ All notable changes to ApiMan. Versions follow [semantic versioning](https://sem
 
 ## Unreleased
 
+### Changed
+- **New brand.** A new logo (an "A" sending a request) and app icon, an iris → azure → cyan palette
+  replacing the orange accent (which was Postman's brand colour), cooler ink-tinted dark surfaces,
+  gradient primary buttons and active-tab indicators, and line icons in place of emoji throughout.
+- The documentation site, README and exported HTML docs use the new brand; new hero banner and
+  social preview image.
+
 ### Added
 - Comprehensive documentation in [`docs/`](docs/README.md): user guide, scripting API and CLI
   references, architecture, contributing and release guides, with screenshots.

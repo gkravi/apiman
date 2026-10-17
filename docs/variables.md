@@ -26,15 +26,15 @@ An environment is a named set of variables — typically one per deployment (Loc
 
 - Create one in the **Environments** sidebar with **+ New**.
 - Pick the active environment in the top-right dropdown. **No Environment** is fine too.
-- The 👁 button next to it opens the active environment (or Globals when none is active) for editing.
+- The eye button next to it opens the active environment (or Globals when none is active) for editing.
 - Changes save as you type.
 
 The same request then works everywhere: `{{baseUrl}}/users/{{userId}}` resolves differently per environment.
 
 ## Secrets
 
-Click 🔓 next to a value to mark it secret (🔒): it's masked in the editor (click the lock to reveal it
-temporarily, right-click to unmark). Secret values are still stored in your workspace file on disk —
+Click the open-lock icon next to a value to mark it secret: the icon closes and the value is masked
+in the editor. Click the lock to reveal the value temporarily; right-click it to unmark. Secret values are still stored in your workspace file on disk —
 see [Data, privacy and security](data-and-security.md).
 
 ## Nested and computed values

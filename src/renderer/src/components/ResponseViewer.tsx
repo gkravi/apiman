@@ -4,6 +4,7 @@ import { useStore, type Tab } from '../store'
 import type { TestResult } from '@core/types'
 import { CodeEditor, type EditorLanguage } from './CodeEditor'
 import { formatBytes } from '../format'
+import { Logo } from './Logo'
 
 type View = 'body' | 'headers' | 'cookies' | 'tests' | 'timeline'
 type BodyView = 'pretty' | 'raw' | 'preview'
@@ -102,6 +103,9 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
   if (!res) {
     return (
       <div className="response empty">
+        <div className="empty-mark">
+          <Logo size={56} />
+        </div>
         <div className="muted big">Enter a URL and click Send to get a response</div>
         <div className="muted small">Tip: paste a cURL command into the URL bar · ⌘↵ to send · ⌘S to save</div>
       </div>
