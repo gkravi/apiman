@@ -101,3 +101,7 @@ The [documentation](docs/README.md) covers every feature, plus references for th
 
 ApiMan has no accounts, telemetry or cloud sync. Requests go only where you send them, and everything
 is stored in a local file. See [Data, privacy and security](docs/data-and-security.md).
+
+## License
+
+[MIT](LICENSE) © 2026 ravi

@@ -37,6 +37,6 @@ HTTP, GraphQL, WebSocket, Server-Sent Events and gRPC, and runs on macOS, Window
 ## For developers
 
 - [Architecture](development/architecture.md) — processes, the core library, the sandbox, data flow
-- [Contributing](../CONTRIBUTING.md) — set up, run, test, code style
+- [Contributing](https://github.com/gkravi/apiman/blob/master/CONTRIBUTING.md) — set up, run, test, code style
 - [Releasing](development/releasing.md) — versioning, installers, signing and notarisation
-- [Changelog](../CHANGELOG.md)
+- [Changelog](https://github.com/gkravi/apiman/blob/master/CHANGELOG.md)

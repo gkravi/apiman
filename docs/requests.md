@@ -82,7 +82,7 @@ Responses larger than 50 MB are refused rather than freezing the app.
 
 ## Code snippets
 
-Click **</> Code** to turn the current request (variables resolved, auth applied) into code:
+Click **`</> Code`** to turn the current request (variables resolved, auth applied) into code:
 
 - cURL
 - JavaScript — `fetch`

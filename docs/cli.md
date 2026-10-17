@@ -108,13 +108,13 @@ jobs:
   api:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: gkravi/apiman
           path: .apiman
           token: ${{ secrets.APIMAN_REPO_TOKEN }}   # needed while the repository is private
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: cd .apiman && npm ci && npm run build:cli
@@ -123,7 +123,7 @@ jobs:
           -e api/ci.postman_environment.json
           --env-var token=${{ secrets.API_TOKEN }}
           -r cli,junit --reporter-junit-export reports/api.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: api-test-report

@@ -6,7 +6,7 @@ page.** That's what lets an API client send arbitrary headers without CORS, run 
 safely, and share one engine between the desktop app and the command line.
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph Renderer["Renderer (React UI, sandboxed)"]
     UI[Components] --> Store[zustand store]
   end

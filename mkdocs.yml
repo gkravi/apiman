@@ -1,0 +1,89 @@
+# Documentation site: https://gkravi.github.io/apiman/
+# Built from docs/ by .github/workflows/docs.yml. Preview locally with:
+#   pip install mkdocs-material && mkdocs serve
+site_name: ApiMan
+site_description: Desktop API client for HTTP, GraphQL, WebSocket, SSE and gRPC
+site_url: https://gkravi.github.io/apiman/
+repo_url: https://github.com/gkravi/apiman
+repo_name: gkravi/apiman
+edit_uri: edit/master/docs/
+copyright: MIT License © 2026 ravi
+
+theme:
+  name: material
+  logo: images/icon.png
+  favicon: images/icon.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+nav:
+  - Home: README.md
+  - User guide:
+      - Getting started: getting-started.md
+      - Sending requests: requests.md
+      - Collections and folders: collections.md
+      - Variables and environments: variables.md
+      - Authentication: authentication.md
+      - Scripts and tests: scripting.md
+      - Collection runner: collection-runner.md
+      - GraphQL: graphql.md
+      - WebSocket and SSE: realtime.md
+      - gRPC: grpc.md
+      - Examples and mock servers: mock-servers.md
+      - Monitors: monitors.md
+      - Cookies, proxies and certificates: network.md
+      - Import, export and documentation: import-export.md
+      - Command-line runner: cli.md
+      - Data, privacy and security: data-and-security.md
+      - Troubleshooting: troubleshooting.md
+  - Reference:
+      - Scripting API: reference/scripting-api.md
+      - CLI options: reference/cli-options.md
+      - Keyboard shortcuts: reference/keyboard-shortcuts.md
+      - Dynamic variables: reference/dynamic-variables.md
+  - Developers:
+      - Architecture: development/architecture.md
+      - Releasing: development/releasing.md
+
+markdown_extensions:
+  - tables
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn

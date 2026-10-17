@@ -3,6 +3,7 @@
   "productName": "ApiMan",
   "version": "0.5.0",
   "description": "A Postman-style API client built with Electron",
+  "license": "MIT",
   "main": "./out/main/index.js",
   "private": true,
   "scripts": {
