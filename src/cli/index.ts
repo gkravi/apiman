@@ -12,7 +12,7 @@ import { applyVarChanges, parseDataFile, toVarMap } from '@core/varsync'
 import { DEFAULT_NETWORK, type Collection, type Environment, type NetworkSettings, type RunnerRequestResult, type RunStep, type Variable } from '@core/types'
 import { createCliReporter, jsonReport, junitReport, type RunReport } from './reporters'
 
-const VERSION = '0.3.0'
+const VERSION = '0.4.0'
 
 const HELP = `apiman ${VERSION} — run API collections from the command line
 

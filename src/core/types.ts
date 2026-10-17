@@ -8,6 +8,18 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 
 
 export const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
+/** http is request/response; the others hold a live connection with a message log. */
+export type Protocol = 'http' | 'websocket' | 'sse' | 'grpc'
+
+export interface GrpcConfig {
+  /** .proto files to load; imports are resolved relative to each file and `includeDirs`. */
+  protoFiles: string[]
+  includeDirs: string[]
+  /** Fully-qualified service name, e.g. "helloworld.Greeter". */
+  service: string
+  method: string
+}
+
 export interface KeyValue {
   id: string
   key: string
@@ -133,6 +145,24 @@ export interface ApiRequest {
   auth: Auth
   settings: RequestSettings
   scripts?: Scripts
+  /** Defaults to 'http'. */
+  protocol?: Protocol
+  /** Draft message for WebSocket / gRPC composers. */
+  message?: string
+  /** WebSocket sub-protocols, comma-separated. */
+  subprotocols?: string
+  grpc?: GrpcConfig
+  /** Saved responses ("examples"), also served by mock servers. */
+  examples?: SavedExample[]
+}
+
+export interface SavedExample {
+  id: string
+  name: string
+  status: number
+  statusText: string
+  headers: [string, string][]
+  body: string
 }
 
 export interface Folder {
@@ -353,4 +383,41 @@ export interface RunnerSummary {
   errors: number
   durationMs: number
   aborted: boolean
+}
+
+// ---------- realtime (WebSocket / SSE / gRPC) ----------
+
+export type StreamEventKind = 'connecting' | 'open' | 'sent' | 'message' | 'error' | 'close' | 'info'
+
+export interface StreamEvent {
+  kind: StreamEventKind
+  timestamp: number
+  /** Message text (binary frames are shown as base64 with `binary: true`). */
+  data?: string
+  binary?: boolean
+  /** Extra detail: SSE event name, close code, gRPC status, response headers… */
+  meta?: string
+}
+
+export interface RealtimeOpenInput {
+  request: ApiRequest
+  parentAuths: (Auth | undefined)[]
+  variables: RunVariables
+  cookies?: Cookie[]
+  network?: NetworkSettings
+}
+
+export interface GrpcMethodInfo {
+  name: string
+  requestType: string
+  responseType: string
+  clientStreaming: boolean
+  serverStreaming: boolean
+  /** Example request message, generated from the message descriptor. */
+  sample: unknown
+}
+
+export interface GrpcServiceInfo {
+  name: string
+  methods: GrpcMethodInfo[]
 }

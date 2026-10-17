@@ -76,7 +76,8 @@ export interface RunnableRequest {
 /** Requests in run order (depth-first), optionally limited to one folder of the collection. */
 export function runnableRequests(collection: Collection, folderId: string | null = null): RunnableRequest[] {
   const walk = (items: CollectionItem[], folders: Folder[]): RunnableRequest[] =>
-    items.flatMap((i) => (i.type === 'folder' ? walk(i.items, [i, ...folders]) : [{ item: i, folders }]))
+    // Only request/response (HTTP) requests can run unattended; live connections are skipped.
+    items.flatMap((i) => (i.type === 'folder' ? walk(i.items, [i, ...folders]) : (i.request.protocol ?? 'http') === 'http' ? [{ item: i, folders }] : []))
   if (!folderId) return walk(collection.items, [])
   const loc = locate([collection], folderId)
   if (!loc || loc.item.type !== 'folder') return []

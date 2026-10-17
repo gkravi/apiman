@@ -15,6 +15,7 @@ import {
   type KeyValue,
   type RawLanguage,
   type RequestBody,
+  type SavedExample,
   type Scripts
 } from './types'
 
@@ -76,6 +77,30 @@ function exportScripts(s: Scripts | undefined): Json[] | undefined {
     s?.test.trim() && { listen: 'test', script: { type: 'text/javascript', exec: s.test.split('\n') } }
   ].filter(Boolean)
   return events.length ? events : undefined
+}
+
+function importExamples(responses: Json[] | undefined): SavedExample[] | undefined {
+  if (!Array.isArray(responses) || responses.length === 0) return undefined
+  return responses.map((r) => ({
+    id: uid(),
+    name: String(r?.name ?? 'Example'),
+    status: Number(r?.code ?? 200),
+    statusText: String(r?.status ?? ''),
+    headers: (Array.isArray(r?.header) ? r.header : []).map((h: Json): [string, string] => [String(h.key ?? ''), String(h.value ?? '')]),
+    body: String(r?.body ?? '')
+  }))
+}
+
+function exportExamples(examples: SavedExample[] | undefined, request: Json): Json[] | undefined {
+  if (!examples?.length) return undefined
+  return examples.map((e) => ({
+    name: e.name,
+    originalRequest: request,
+    status: e.statusText,
+    code: e.status,
+    header: e.headers.map(([key, value]) => ({ key, value })),
+    body: e.body
+  }))
 }
 
 function importBody(b: Json): RequestBody {
@@ -158,6 +183,7 @@ function importItems(items: Json[] | undefined): CollectionItem[] {
       return { id: uid(), type: 'folder', name: String(it.name ?? 'Folder'), items: importItems(it.item), auth: importAuth(it.auth), scripts: importScripts(it.event) }
     }
     const request = importRequest(String(it.name ?? 'Request'), it.request ?? {}, it.event)
+    request.examples = importExamples(it.response)
     return { id: request.id, type: 'request', request }
   })
 }
@@ -199,20 +225,17 @@ function exportItems(items: CollectionItem[]): Json[] {
   return items.map((it) => {
     if (it.type === 'folder') return { name: it.name, item: exportItems(it.items), auth: exportAuth(it.auth), event: exportScripts(it.scripts) }
     const r = it.request
-    return {
-      name: r.name,
-      event: exportScripts(r.scripts),
-      request: {
-        method: r.method,
-        header: r.headers.map((h) => ({ key: h.key, value: h.value, disabled: !h.enabled || undefined })),
-        body: exportBody(r.body),
-        auth: exportAuth(r.auth),
-        url: {
-          raw: r.url,
-          query: r.params.map((p) => ({ key: p.key, value: p.value, disabled: !p.enabled || undefined }))
-        }
+    const request = {
+      method: r.method,
+      header: r.headers.map((h) => ({ key: h.key, value: h.value, disabled: !h.enabled || undefined })),
+      body: exportBody(r.body),
+      auth: exportAuth(r.auth),
+      url: {
+        raw: r.url,
+        query: r.params.map((p) => ({ key: p.key, value: p.value, disabled: !p.enabled || undefined }))
       }
     }
+    return { name: r.name, event: exportScripts(r.scripts), request, response: exportExamples(r.examples, request) }
   })
 }
 

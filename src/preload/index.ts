@@ -15,6 +15,25 @@ const api: Api = {
     return () => ipcRenderer.removeListener('runner:result', listener)
   },
   pickFile: () => ipcRenderer.invoke('dialog:pickFile'),
+  pickFiles: (extensions) => ipcRenderer.invoke('dialog:pickFiles', extensions),
+  realtimeOpen: (id, input) => ipcRenderer.invoke('rt:open', id, input),
+  realtimeSend: (id, data) => ipcRenderer.invoke('rt:send', id, data),
+  realtimeEnd: (id) => ipcRenderer.invoke('rt:end', id),
+  realtimeClose: (id) => ipcRenderer.invoke('rt:close', id),
+  onRealtimeEvent: (cb) => {
+    const listener = (_e: IpcRendererEvent, id: string, ev: Parameters<typeof cb>[1]): void => cb(id, ev)
+    ipcRenderer.on('rt:event', listener)
+    return () => ipcRenderer.removeListener('rt:event', listener)
+  },
+  mockStart: (id, collection, port) => ipcRenderer.invoke('mock:start', id, collection, port),
+  mockStop: (id) => ipcRenderer.invoke('mock:stop', id),
+  mockUpdate: (id, collection) => ipcRenderer.invoke('mock:update', id, collection),
+  onMockLog: (cb) => {
+    const listener = (_e: IpcRendererEvent, id: string, entry: Parameters<typeof cb>[1]): void => cb(id, entry)
+    ipcRenderer.on('mock:log', listener)
+    return () => ipcRenderer.removeListener('mock:log', listener)
+  },
+  grpcDescribe: (files, includeDirs) => ipcRenderer.invoke('grpc:describe', files, includeDirs),
   openJson: () => ipcRenderer.invoke('dialog:openJson'),
   openDataFile: () => ipcRenderer.invoke('dialog:openData'),
   saveJson: (name, content) => ipcRenderer.invoke('dialog:saveJson', name, content),

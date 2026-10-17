@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { parse, print } from 'graphql'
 import { newKeyValue, uid } from '@core/factory'
 import { parseCurl } from '@core/curl'
 import { normalizeUrl, paramsFromUrl, urlWithParams } from '@core/url'
@@ -6,17 +7,35 @@ import { resolve, unresolvedVariables, type Scope } from '@core/variables'
 import { OAuth2Fields } from './OAuth2Fields'
 import { effectiveAuth } from '@core/prepare'
 import { locate, parentAuths } from '@core/tree'
-import { DEFAULT_OAUTH2, HTTP_METHODS, type Auth, type AuthType, type BodyMode, type FormField, type HttpMethod, type RawLanguage, type RequestBody } from '@core/types'
+import { DEFAULT_OAUTH2, HTTP_METHODS, type Protocol, type Auth, type AuthType, type BodyMode, type FormField, type HttpMethod, type RawLanguage, type RequestBody } from '@core/types'
 import { scopesFor, useStore, type Tab } from '../store'
 import { KeyValueTable } from './KeyValueTable'
 import { CodeEditor } from './CodeEditor'
 import { ScriptsEditor } from './ScriptsEditor'
+import { GrpcServicePanel, MessageComposer } from './LiveEditors'
+import { grpcMethodOf } from '../format'
+import { ExamplesPanel } from './ExamplesPanel'
 
-type Section = 'params' | 'auth' | 'headers' | 'body' | 'scripts' | 'settings'
+type Section = 'params' | 'auth' | 'headers' | 'body' | 'scripts' | 'settings' | 'message' | 'service' | 'examples'
+
+const PROTOCOLS: { id: Protocol; label: string; placeholder: string }[] = [
+  { id: 'http', label: 'HTTP', placeholder: 'Enter URL or paste a cURL command' },
+  { id: 'websocket', label: 'WebSocket', placeholder: 'ws://localhost:8080/socket' },
+  { id: 'sse', label: 'SSE', placeholder: 'https://example.com/events' },
+  { id: 'grpc', label: 'gRPC', placeholder: 'grpc://localhost:50051  (grpcs:// for TLS)' }
+]
+
+/** Tabs shown per protocol; the first one is where a freshly opened request starts. */
+const SECTION_ORDER: Record<Protocol, Section[]> = {
+  http: ['params', 'auth', 'headers', 'body', 'scripts', 'settings', 'examples'],
+  websocket: ['message', 'params', 'headers', 'auth', 'settings'],
+  sse: ['params', 'headers', 'auth', 'body', 'settings'],
+  grpc: ['message', 'service', 'headers', 'auth', 'settings']
+}
 
 export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
   const s = useStore()
-  const [section, setSection] = useState<Section>('params')
+  const [section, setSection] = useState<Section>(() => SECTION_ORDER[tab.draft.protocol ?? 'http'][0])
   const r = tab.draft
   const update = (patch: Parameters<typeof s.updateDraft>[1]): void => s.updateDraft(tab.id, patch)
 
@@ -41,15 +60,46 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
     }
   }
 
+  const protocol: Protocol = r.protocol ?? 'http'
+  const isLive = protocol !== 'http'
+  const live = tab.live
+  const connected = live !== undefined && live.status !== 'closed'
+  const grpcMethod = protocol === 'grpc' ? grpcMethodOf(s.grpc[tab.id]?.services, r.grpc) : undefined
+  const singleCall = protocol === 'grpc' && grpcMethod !== undefined && !grpcMethod.clientStreaming
+
   const count = (n: number): string => (n ? ` (${n})` : '')
-  const sections: { id: Section; label: string }[] = [
-    { id: 'params', label: `Params${count(r.params.filter((p) => p.enabled).length)}` },
-    { id: 'auth', label: 'Authorization' },
-    { id: 'headers', label: `Headers${count(r.headers.filter((h) => h.enabled).length)}` },
-    { id: 'body', label: 'Body' },
-    { id: 'scripts', label: 'Scripts' },
-    { id: 'settings', label: 'Settings' }
-  ]
+  const all: Record<Section, string> = {
+    message: 'Message',
+    service: `Service${r.grpc?.method ? '' : ' •'}`,
+    params: `Params${count(r.params.filter((p) => p.enabled).length)}`,
+    auth: 'Authorization',
+    headers: `${protocol === 'grpc' ? 'Metadata' : 'Headers'}${count(r.headers.filter((h) => h.enabled).length)}`,
+    body: 'Body',
+    scripts: 'Scripts',
+    settings: 'Settings',
+    examples: `Examples${count(r.examples?.length ?? 0)}`
+  }
+  const order = SECTION_ORDER
+  const sections = order[protocol].map((id) => ({ id, label: all[id] }))
+  const current: Section = order[protocol].includes(section) ? section : order[protocol][0]
+
+  const setProtocol = (p: Protocol): void => {
+    const patch: Parameters<typeof s.updateDraft>[1] = { protocol: p }
+    if (p === 'websocket') patch.url = r.url.replace(/^http(s?):\/\//i, 'ws$1://')
+    if (p !== 'websocket') patch.url = r.url.replace(/^ws(s?):\/\//i, 'http$1://')
+    if (p === 'grpc') {
+      patch.grpc = r.grpc ?? { protoFiles: [], includeDirs: [], service: '', method: '' }
+      if (!r.url.trim()) patch.url = 'grpc://localhost:50051'
+    }
+    if (live && live.status !== 'closed') s.disconnect(tab.id)
+    update(patch)
+    setSection(SECTION_ORDER[p][0])
+  }
+  const go = (): void => {
+    if (!isLive) return void s.send(tab.id)
+    if (connected && !singleCall) s.disconnect(tab.id)
+    else void s.connect(tab.id)
+  }
 
   return (
     <div className="request-editor">
@@ -100,27 +150,40 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
       </div>
 
       <div className="url-bar">
-        <select className={`method-select m-${r.method.toLowerCase()}`} value={r.method} onChange={(e) => update({ method: e.target.value as HttpMethod })}>
-          {HTTP_METHODS.map((m) => (
-            <option key={m}>{m}</option>
+        <select className="protocol-select" value={protocol} onChange={(e) => setProtocol(e.target.value as Protocol)} title="Protocol">
+          {PROTOCOLS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
           ))}
         </select>
+        {(protocol === 'http' || protocol === 'sse') && (
+          <select className={`method-select m-${r.method.toLowerCase()}`} value={r.method} onChange={(e) => update({ method: e.target.value as HttpMethod })}>
+            {HTTP_METHODS.map((m) => (
+              <option key={m}>{m}</option>
+            ))}
+          </select>
+        )}
         <input
           className="url-input"
-          placeholder="Enter URL or paste a cURL command"
+          placeholder={PROTOCOLS.find((p) => p.id === protocol)?.placeholder}
           value={r.url}
           spellCheck={false}
           onChange={(e) => onUrl(e.target.value)}
-          onPaste={onPaste}
-          onKeyDown={(e) => e.key === 'Enter' && void s.send(tab.id)}
+          onPaste={protocol === 'http' ? onPaste : undefined}
+          onKeyDown={(e) => e.key === 'Enter' && go()}
           title={r.url.includes('{{') ? `Resolved: ${resolve(r.url, scopes)}` : undefined}
         />
         {tab.loading ? (
           <button className="btn danger send" onClick={() => s.cancel(tab.id)}>
             Cancel
           </button>
+        ) : isLive ? (
+          <button className={`btn send ${connected && !singleCall ? 'danger' : 'primary'}`} onClick={go} disabled={!r.url.trim()}>
+            {singleCall ? (live?.status === 'connecting' ? 'Calling…' : 'Invoke') : live?.status === 'connecting' ? 'Cancel' : connected ? 'Disconnect' : 'Connect'}
+          </button>
         ) : (
-          <button className="btn primary send" onClick={() => void s.send(tab.id)} disabled={!r.url.trim()}>
+          <button className="btn primary send" onClick={go} disabled={!r.url.trim()}>
             Send
           </button>
         )}
@@ -135,7 +198,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
 
       <div className="subtabs">
         {sections.map((sec) => (
-          <button key={sec.id} className={`subtab ${section === sec.id ? 'active' : ''}`} onClick={() => setSection(sec.id)}>
+          <button key={sec.id} className={`subtab ${current === sec.id ? 'active' : ''}`} onClick={() => setSection(sec.id)}>
             {sec.label}
             {sec.id === 'body' && r.body.mode !== 'none' && <span className="dot" />}
             {sec.id === 'auth' && r.auth.type !== 'inherit' && r.auth.type !== 'none' && <span className="dot" />}
@@ -145,38 +208,55 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
       </div>
 
       <div className="section-body">
-        {section === 'params' && (
+        {current === 'message' && <MessageComposer tab={tab} method={grpcMethod} />}
+        {current === 'service' && <GrpcServicePanel tab={tab} />}
+        {current === 'examples' && <ExamplesPanel tab={tab} />}
+        {current === 'params' && (
           <>
             <div className="section-title">Query Params</div>
             <KeyValueTable rows={r.params} onChange={(params) => update({ params, url: urlWithParams(r.url, params) })} />
           </>
         )}
-        {section === 'headers' && (
+        {current === 'headers' && (
           <>
             <div className="section-title">Headers</div>
             <KeyValueTable rows={r.headers} onChange={(headers) => update({ headers })} keyPlaceholder="Header" />
-            <div className="hint">Content-Type, User-Agent, Accept and Accept-Encoding are added automatically when not set.</div>
+            <div className="hint">
+              {protocol === 'grpc'
+                ? 'Sent as gRPC metadata (keys are lower-cased). Authorization from the Auth tab is included.'
+                : protocol === 'websocket'
+                  ? 'Sent with the WebSocket handshake.'
+                  : 'Content-Type, User-Agent, Accept and Accept-Encoding are added automatically when not set.'}
+            </div>
           </>
         )}
-        {section === 'auth' && <AuthEditor auth={r.auth} onChange={(auth) => update({ auth })} inherited={loc ? effectiveAuth({ type: 'inherit' }, parentAuths(loc)) : undefined} scopes={scopes} />}
-        {section === 'body' && <BodyEditor body={r.body} onChange={(body) => update({ body })} />}
-        {section === 'scripts' && <ScriptsEditor scripts={r.scripts} onChange={(scripts) => update({ scripts })} scopeLabel="request" />}
-        {section === 'settings' && (
+        {current === 'auth' && <AuthEditor auth={r.auth} onChange={(auth) => update({ auth })} inherited={loc ? effectiveAuth({ type: 'inherit' }, parentAuths(loc)) : undefined} scopes={scopes} />}
+        {current === 'body' && <BodyEditor body={r.body} onChange={(body) => update({ body })} tabId={tab.id} />}
+        {current === 'scripts' && <ScriptsEditor scripts={r.scripts} onChange={(scripts) => update({ scripts })} scopeLabel="request" />}
+        {current === 'settings' && (
           <div className="settings-grid">
-            <label className="check">
+            {protocol === 'websocket' && (
+              <label className="field">
+                Sub-protocols (comma-separated)
+                <input placeholder="e.g. graphql-ws, chat" value={r.subprotocols ?? ''} onChange={(e) => update({ subprotocols: e.target.value })} />
+              </label>
+            )}
+            {protocol !== 'grpc' && <label className="check">
               <input type="checkbox" checked={r.settings.followRedirects} onChange={(e) => update({ settings: { ...r.settings, followRedirects: e.target.checked } })} />
               Automatically follow redirects
-            </label>
-            <label className="field">
-              Max redirects
-              <input type="number" min={0} max={50} value={r.settings.maxRedirects} onChange={(e) => update({ settings: { ...r.settings, maxRedirects: Number(e.target.value) } })} />
-            </label>
+            </label>}
+            {protocol !== 'grpc' && (
+              <label className="field">
+                Max redirects
+                <input type="number" min={0} max={50} value={r.settings.maxRedirects} onChange={(e) => update({ settings: { ...r.settings, maxRedirects: Number(e.target.value) } })} />
+              </label>
+            )}
             <label className="check">
               <input type="checkbox" checked={r.settings.verifySsl} onChange={(e) => update({ settings: { ...r.settings, verifySsl: e.target.checked } })} />
               Verify SSL certificates
             </label>
             <label className="field">
-              Timeout (ms)
+              {isLive ? (protocol === 'grpc' ? 'Deadline for unary calls (ms)' : 'Connect timeout (ms)') : 'Timeout (ms)'}
               <input type="number" min={0} step={1000} value={r.settings.timeoutMs} onChange={(e) => update({ settings: { ...r.settings, timeoutMs: Number(e.target.value) } })} />
             </label>
           </div>
@@ -341,7 +421,55 @@ const RAW_LANGS: { id: RawLanguage; label: string }[] = [
   { id: 'javascript', label: 'JavaScript' }
 ]
 
-function BodyEditor({ body, onChange }: { body: RequestBody; onChange(b: RequestBody): void }): React.JSX.Element {
+function GraphQLBody({ body, onChange, tabId }: { body: Extract<RequestBody, { mode: 'graphql' }>; onChange(b: RequestBody): void; tabId: string }): React.JSX.Element {
+  const schemaState = useStore((st) => st.schemas[tabId])
+  const fetchSchema = useStore((st) => st.fetchSchema)
+  const types = schemaState?.schema ? Object.keys(schemaState.schema.getTypeMap()).filter((t) => !t.startsWith('__')).length : 0
+  const prettify = (): void => {
+    try {
+      onChange({ ...body, query: print(parse(body.query)) })
+    } catch {
+      /* invalid query — leave it */
+    }
+  }
+  return (
+    <div className="graphql">
+      <div className="graphql-pane">
+        <div className="section-title graphql-head">
+          <span>Query</span>
+          <span className="spacer" />
+          <span className={`schema-status ${schemaState?.error ? 'err' : ''}`} title={schemaState?.error}>
+            {schemaState?.loading
+              ? 'Fetching schema…'
+              : schemaState?.error
+                ? 'Schema unavailable'
+                : schemaState?.schema
+                  ? `Schema: ${types} types · autocomplete on`
+                  : 'No schema loaded'}
+          </span>
+          <button className="btn small ghost" onClick={() => void fetchSchema(tabId)} disabled={schemaState?.loading}>
+            {schemaState?.schema ? 'Refresh schema' : 'Fetch schema'}
+          </button>
+          <button className="btn small ghost" onClick={prettify}>
+            Prettify
+          </button>
+        </div>
+        {schemaState?.error && <div className="error-msg small">{schemaState.error}</div>}
+        <div className="editor-box">
+          <CodeEditor value={body.query} onChange={(query) => onChange({ ...body, query })} language="graphql" schema={schemaState?.schema} placeholder="query { … }  — Ctrl+Space for suggestions" />
+        </div>
+      </div>
+      <div className="graphql-pane">
+        <div className="section-title">GraphQL Variables</div>
+        <div className="editor-box">
+          <CodeEditor value={body.variables} onChange={(variables) => onChange({ ...body, variables })} language="json" placeholder="{ }" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BodyEditor({ body, onChange, tabId }: { body: RequestBody; onChange(b: RequestBody): void; tabId: string }): React.JSX.Element {
   const setMode = (mode: BodyMode): void => {
     if (mode === body.mode) return
     switch (mode) {
@@ -424,22 +552,7 @@ function BodyEditor({ body, onChange }: { body: RequestBody; onChange(b: Request
         />
       )}
       {body.mode === 'binary' && <FilePicker path={body.filePath} onPick={(filePath) => onChange({ ...body, filePath })} />}
-      {body.mode === 'graphql' && (
-        <div className="graphql">
-          <div className="graphql-pane">
-            <div className="section-title">Query</div>
-            <div className="editor-box">
-              <CodeEditor value={body.query} onChange={(query) => onChange({ ...body, query })} placeholder="query { … }" />
-            </div>
-          </div>
-          <div className="graphql-pane">
-            <div className="section-title">GraphQL Variables</div>
-            <div className="editor-box">
-              <CodeEditor value={body.variables} onChange={(variables) => onChange({ ...body, variables })} language="json" placeholder="{ }" />
-            </div>
-          </div>
-        </div>
-      )}
+      {body.mode === 'graphql' && <GraphQLBody body={body} onChange={onChange} tabId={tabId} />}
     </div>
   )
 }

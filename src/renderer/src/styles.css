@@ -1562,3 +1562,251 @@ select.cell.small {
   gap: 8px;
   align-items: center;
 }
+
+/* ---------- phase 4: graphql ---------- */
+.graphql-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.schema-status {
+  font-size: 11px;
+  color: var(--ok);
+}
+.schema-status.err {
+  color: var(--warn);
+}
+.cm-tooltip-autocomplete {
+  font-family: var(--mono);
+}
+
+/* ---------- phase 4: realtime ---------- */
+.protocol-select {
+  border-radius: var(--radius) 0 0 var(--radius);
+  width: 108px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+  border-right: none;
+}
+.protocol-select + .method-select {
+  border-radius: 0;
+}
+.url-bar .protocol-select + .url-input {
+  border-left: 1px solid var(--border);
+}
+.proto-websocket {
+  color: #56d4dd;
+}
+.proto-sse {
+  color: #f0883e;
+}
+.proto-grpc {
+  color: #a371f7;
+}
+.composer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 6px;
+}
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.grpc-panel {
+  max-width: 820px;
+}
+.proto-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.proto-dir {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-bar {
+  gap: 10px;
+  padding: 6px 0;
+  justify-content: flex-start;
+}
+.live-status {
+  font-weight: 600;
+  font-size: 12px;
+  min-width: 90px;
+}
+.live-status.open {
+  color: var(--ok);
+}
+.live-status.connecting {
+  color: var(--blue);
+}
+.live-status.closed {
+  color: var(--text-2);
+}
+.live-search {
+  flex: 1;
+  max-width: 260px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.live-log {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  user-select: text;
+}
+.live-row {
+  border-bottom: 1px solid var(--border);
+}
+.live-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  cursor: pointer;
+  min-height: 28px;
+}
+.live-head:hover {
+  background: var(--bg-hover);
+}
+.live-icon {
+  width: 14px;
+  text-align: center;
+  font-weight: 700;
+  flex: none;
+}
+.k-sent .live-icon {
+  color: var(--blue);
+}
+.k-message .live-icon {
+  color: var(--ok);
+}
+.k-error .live-icon,
+.k-error .live-text {
+  color: var(--danger);
+}
+.k-open .live-icon,
+.k-close .live-icon,
+.k-info .live-icon,
+.k-connecting .live-icon {
+  color: var(--text-3);
+}
+.k-open .live-text,
+.k-close .live-text,
+.k-info .live-text,
+.k-connecting .live-text {
+  color: var(--text-2);
+}
+.live-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-meta {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-time {
+  flex: none;
+  font-family: var(--mono);
+}
+.live-detail {
+  padding: 4px 10px 10px 34px;
+}
+.live-detail pre {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------- phase 4: examples & mocks ---------- */
+.examples {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.example-list {
+  width: 240px;
+  flex: none;
+  overflow-y: auto;
+}
+.example-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.example-row:hover {
+  background: var(--bg-hover);
+}
+.example-row.active {
+  background: var(--bg-3);
+}
+.example-view {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mock-pill {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--ok);
+  border: 1px solid rgba(63, 185, 80, 0.4);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+.mock-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.mock-controls .field {
+  margin: 0;
+  width: 110px;
+}
+.mock-url {
+  padding: 6px 0;
+  user-select: text;
+}
+.mock-routes,
+.mock-log {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.mock-route,
+.mock-log-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.mock-path {
+  min-width: 160px;
+}
+.mock-log-row {
+  font-size: 12px;
+}

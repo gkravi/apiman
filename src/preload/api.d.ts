@@ -1,4 +1,9 @@
+import type { MockLogEntry } from '../core/mockRoutes'
 import type {
+  Collection,
+  GrpcServiceInfo,
+  RealtimeOpenInput,
+  StreamEvent,
   Cookie,
   NetworkSettings,
   OAuth2Config,
@@ -37,6 +42,18 @@ export interface Api {
   /** Subscribe to per-request runner results; returns an unsubscribe function. */
   onRunnerResult(cb: (runId: string, result: RunnerRequestResult) => void): () => void
   pickFile(): Promise<string | null>
+  pickFiles(extensions?: string[]): Promise<string[]>
+  realtimeOpen(id: string, input: RealtimeOpenInput): Promise<{ ok: true } | { ok: false; error: string }>
+  realtimeSend(id: string, data: string): Promise<void>
+  realtimeEnd(id: string): Promise<void>
+  realtimeClose(id: string): Promise<void>
+  /** Subscribe to events from all realtime sessions; returns an unsubscribe function. */
+  onRealtimeEvent(cb: (id: string, event: StreamEvent) => void): () => void
+  mockStart(collectionId: string, collection: Collection, port: number): Promise<{ ok: true; port: number } | { ok: false; error: string }>
+  mockStop(collectionId: string): Promise<void>
+  mockUpdate(collectionId: string, collection: Collection): Promise<void>
+  onMockLog(cb: (collectionId: string, entry: MockLogEntry) => void): () => void
+  grpcDescribe(files: string[], includeDirs: string[]): Promise<{ ok: true; services: GrpcServiceInfo[] } | { ok: false; error: string }>
   openJson(): Promise<OpenedFile>
   openDataFile(): Promise<OpenedFile>
   saveJson(defaultName: string, content: string): Promise<boolean>

@@ -12,6 +12,7 @@ import { AuthEditor } from './RequestEditor'
 import { ScriptsEditor } from './ScriptsEditor'
 import { RunnerModal } from './RunnerModal'
 import { CookiesModal, SettingsModal } from './SettingsModals'
+import { MockModal } from './MockModal'
 import { locate } from '@core/tree'
 
 function Shell({ title, onClose, children, wide, footer }: { title: string; onClose(): void; children: React.ReactNode; wide?: boolean; footer?: React.ReactNode }): React.JSX.Element {
@@ -117,6 +118,7 @@ function CodeModal({ tabId, close }: { tabId: string; close(): void }): React.JS
   const tab = s.tabs.find((t) => t.id === tabId)
   const snippet = useMemo(() => {
     if (!tab) return ''
+    if ((tab.draft.protocol ?? 'http') !== 'http') return '// Code snippets are available for HTTP requests only.'
     try {
       return generateSnippet(lang, prepareTab(s.workspace, tab))
     } catch (e) {
@@ -457,5 +459,7 @@ export function ModalHost(): React.JSX.Element | null {
       return <CookiesModal initialDomain={modal.domain} close={close} />
     case 'settings':
       return <SettingsModal close={close} />
+    case 'mock':
+      return <MockModal collectionId={modal.collectionId} close={close} />
   }
 }

@@ -12,7 +12,21 @@ npm start          # run the production build
 npm test           # core unit + integration tests
 npm run typecheck
 npm run cli -- run my.postman_collection.json -e dev.postman_environment.json
+npm run dist       # installers for this OS into dist/ (macOS: .dmg + .zip)
+npm run dist:dir   # unpacked app only — quickest way to try a packaged build
 ```
+
+### Installers and signing
+
+`electron-builder.config.cjs` builds a DMG/zip on macOS, an NSIS installer on Windows (x64 + arm64)
+and AppImage/deb on Linux. Builds are unsigned unless credentials are in the environment:
+
+- **macOS** — a Developer ID identity in the keychain, or `CSC_LINK` + `CSC_KEY_PASSWORD`;
+  notarisation runs when `APPLE_API_KEY` + `APPLE_API_KEY_ID` + `APPLE_API_ISSUER`
+  (or `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID`) are set.
+- **Windows** — `WIN_CSC_LINK` + `WIN_CSC_KEY_PASSWORD`.
+
+Unsigned macOS builds open with right-click → Open the first time.
 
 ## CLI
 
@@ -47,12 +61,16 @@ src/
     digest.ts, awsv4.ts, oauth2.ts   Digest challenge, SigV4 signing, OAuth 2.0 grants (Node only)
     openapi.ts     OpenAPI 3 / Swagger 2 (JSON or YAML) → collection
     sandbox-libs.ts  crypto-js and lodash sources embedded for require() in scripts
+    graphql.ts     introspection request + schema building for autocomplete
+    realtime.ts, sse.ts   WebSocket and Server-Sent Events sessions (Node only, except the SSE parser)
+    grpc.ts        .proto loading, example messages, unary/streaming calls (Node only)
+    mockRoutes.ts, mock.ts   saved-example routing and the mock HTTP server (server is Node only)
     curl.ts        cURL import/export
     postman.ts     Postman Collection v2.0/2.1 + environment import/export
     codegen.ts     snippets: cURL, fetch, axios, Python requests
     tree.ts        immutable collection-tree helpers
   cli/         apiman command-line runner and its cli/json/junit reporters
-  main/        Electron main process: window, IPC, JSON workspace storage, OAuth sign-in window
+  main/        Electron main process: window, IPC, storage, OAuth sign-in, live sessions, mock servers
   preload/     contextBridge API exposed as window.api
   renderer/    React UI (zustand store, components)
 ```
@@ -101,9 +119,29 @@ The workspace is saved to `workspace.json` in the Electron user-data directory.
   `_` globals and a secure `crypto.getRandomValues`
 - `apiman` CLI runner (see above)
 
-Not yet supported: `setTimeout` delays in scripts, `pm.cookies.jar()`, WebSocket/GraphQL schema/gRPC.
+Not yet supported: `setTimeout` delays in scripts, `pm.cookies.jar()`.
 
-## Next (Phase 4)
+## Phase 4 features (done)
 
-GraphQL schema introspection and autocomplete, WebSocket and Server-Sent Events, gRPC,
-mock servers from saved examples, and app packaging (signed installers).
+- **GraphQL**: fetch the schema by introspection (using the request's auth, cookies and proxy), then
+  schema-aware autocomplete and validation in the query editor, plus Prettify
+- **WebSocket**: connect with headers, auth, cookies and sub-protocols, through the proxy and client
+  certificates; send text/JSON messages; full message log
+- **Server-Sent Events**: GET or POST streams (e.g. LLM streaming APIs), named events and ids
+- **gRPC**: load .proto files, pick service and method, generated example messages; unary,
+  server-streaming, client-streaming and bidirectional calls with metadata, TLS and deadlines
+- Message log for live connections: sent/received filters, search, expandable pretty JSON
+- **Saved examples**: save any response as an example; included in Postman import/export
+- **Mock servers**: serve a collection's examples locally with method + path matching, `{{var}}`/`:param`
+  wildcards, `x-mock-response-name` / `x-mock-response-code` selection, dynamic variables, CORS, and
+  live reload as you edit
+- **Packaging**: electron-builder installers with an app icon, hardened-runtime entitlements and
+  optional signing/notarisation
+
+Collection runs and the CLI skip WebSocket, SSE and gRPC requests (they need a live session).
+gRPC server reflection isn't supported yet — load the .proto files.
+
+## Next ideas
+
+gRPC server reflection, WebSocket/Socket.IO message templates, team sync (shared workspaces),
+API documentation pages generated from collections, scheduled monitors.

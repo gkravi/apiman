@@ -176,6 +176,20 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
             <button className="btn small ghost" onClick={save}>
               Save to file
             </button>
+            <button
+              className="btn small ghost"
+              title="Keep this response on the request; mock servers serve saved examples"
+              onClick={() =>
+                useStore.getState().openModal({
+                  kind: 'prompt',
+                  title: 'Example name',
+                  initial: `${res.status} ${res.statusText}`.trim() || 'Example',
+                  onSubmit: (name) => useStore.getState().saveExample(tab.id, name)
+                })
+              }
+            >
+              Save as example
+            </button>
           </div>
           <div className="response-body">
             {res.bodyEncoding === 'base64' ? (

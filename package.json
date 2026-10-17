@@ -1,7 +1,7 @@
 {
   "name": "apiman",
   "productName": "ApiMan",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "A Postman-style API client built with Electron",
   "main": "./out/main/index.js",
   "private": true,
@@ -12,36 +12,51 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "build:cli": "vite build --config vite.cli.config.ts",
-    "cli": "node out/cli/apiman.cjs"
+    "cli": "node out/cli/apiman.cjs",
+    "dist": "npm run build && electron-builder --config electron-builder.config.cjs",
+    "dist:dir": "npm run build && electron-builder --config electron-builder.config.cjs --dir",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.6",
+    "@grpc/proto-loader": "^0.8.1",
+    "nanoid": "^6.0.2",
+    "protobufjs": "^7.6.6",
+    "quickjs-emscripten": "^0.32.0",
+    "ws": "^8.22.0",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
     "@codemirror/lang-html": "^6.4.12",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-xml": "^6.1.0",
     "@codemirror/view": "^6.43.14",
-    "@uiw/react-codemirror": "^4.25.12",
-    "crypto-js": "^4.2.0",
-    "lodash": "^4.18.1",
-    "nanoid": "^6.0.2",
-    "quickjs-emscripten": "^0.32.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "yaml": "^2.9.1",
-    "zustand": "^5.0.15"
-  },
-  "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "@uiw/react-codemirror": "^4.25.12",
     "@vitejs/plugin-react": "^6.1.2",
+    "cm6-graphql": "^0.2.2",
+    "crypto-js": "^4.2.0",
     "electron": "^44.8.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
+    "graphql": "^17.0.2",
+    "lodash": "^4.18.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "zustand": "^5.0.15"
   },
   "bin": {
     "apiman": "./out/cli/apiman.cjs"
+  },
+  "author": {
+    "name": "ravi",
+    "email": "17067993+gkravi@users.noreply.github.com"
   }
 }

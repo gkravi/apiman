@@ -13,7 +13,7 @@ export function TabBar(): React.JSX.Element {
           onAuxClick={(e) => e.button === 1 && closeTab(t.id)}
           title={t.draft.url || t.draft.name}
         >
-          <MethodBadge method={t.draft.method} />
+          <MethodBadge method={t.draft.method} protocol={t.draft.protocol} />
           <span className="tab-name">{t.draft.name}</span>
           {t.dirty && <span className="dirty-dot" title="Unsaved changes" />}
           <button

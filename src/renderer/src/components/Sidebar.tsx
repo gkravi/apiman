@@ -46,7 +46,7 @@ function TreeItem({ item, collection, depth }: { item: CollectionItem; collectio
   if (item.type === 'request') {
     return (
       <div className={`tree-row ${activeItemId === item.id ? 'active' : ''}`} style={pad} onClick={() => s.openItem(item.id)}>
-        <MethodBadge method={item.request.method} />
+        <MethodBadge method={item.request.method} protocol={item.request.protocol} />
         <span className="tree-label">{item.request.name}</span>
         <ItemMenu
           items={[
@@ -98,9 +98,15 @@ function CollectionNode({ collection }: { collection: Collection }): React.JSX.E
       <div className="tree-row collection-row" onClick={() => setOpen(!open)}>
         <span className="caret">{open ? '▾' : '▸'}</span>
         <span className="tree-label strong">{collection.name}</span>
+        {s.mocks[collection.id]?.status === 'running' && (
+          <span className="mock-pill" title={`Mock server on port ${s.mocks[collection.id].port}`}>
+            mock :{s.mocks[collection.id].port}
+          </span>
+        )}
         <ItemMenu
           items={[
             { label: 'Run collection', onClick: () => s.openModal({ kind: 'runner', collectionId: collection.id, folderId: null }) },
+            { label: s.mocks[collection.id]?.status === 'running' ? 'Mock server (running)…' : 'Mock server…', onClick: () => s.openModal({ kind: 'mock', collectionId: collection.id }) },
             { label: 'Add request', onClick: () => s.addRequestTo(collection.id, null) },
             {
               label: 'Add folder',
@@ -245,7 +251,7 @@ function History(): React.JSX.Element {
             <div className="group-label">{day}</div>
             {entries.map((h) => (
               <div key={h.id} className="tree-row" onClick={() => s.openHistory(h.id)} title={h.request.url}>
-                <MethodBadge method={h.request.method} />
+                <MethodBadge method={h.request.method} protocol={h.request.protocol} />
                 <span className="tree-label">{h.request.url || h.request.name}</span>
                 {h.status !== undefined && <span className={`status-chip s${Math.floor(h.status / 100)}`}>{h.status}</span>}
               </div>

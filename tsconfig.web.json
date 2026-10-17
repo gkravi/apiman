@@ -32,6 +32,9 @@
     "src/core/digest.ts",
     "src/core/oauth2.ts",
     "src/core/sandbox-libs.ts",
+    "src/core/mock.ts",
+    "src/core/realtime.ts",
+    "src/core/grpc.ts",
     "src/core/**/*.test.ts"
   ]
 }

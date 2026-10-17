@@ -6,6 +6,7 @@ import { RequestEditor } from './components/RequestEditor'
 import { ResponseViewer } from './components/ResponseViewer'
 import { ModalHost } from './components/Modals'
 import { ConsolePanel } from './components/ConsolePanel'
+import { LiveViewer } from './components/LiveEditors'
 
 function EnvironmentSelect(): React.JSX.Element {
   const s = useStore()
@@ -59,7 +60,7 @@ function Workbench(): React.JSX.Element | null {
       </div>
       <div className="splitter" onMouseDown={startDrag} />
       <div className="pane" style={{ flexBasis: `${(1 - split) * 100}%` }}>
-        <ResponseViewer key={tab.id} tab={tab} />
+        {(tab.draft.protocol ?? 'http') === 'http' ? <ResponseViewer key={tab.id} tab={tab} /> : <LiveViewer key={tab.id} tab={tab} />}
       </div>
     </div>
   )

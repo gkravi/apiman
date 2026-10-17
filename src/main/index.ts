@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { runCollection, runRequest } from '@core/run'
 import { CookieJar } from '@core/cookies'
 import { getToken, refresh } from './oauth'
+import { registerRealtime } from './realtime'
+import { registerMocks } from './mock'
 import type { Cookie, NetworkSettings, OAuth2Config, RunnerOptions, RunRequestInput, RunStep, RunVariables } from '@core/types'
 import { loadWorkspace, saveWorkspace } from './storage'
 
@@ -93,6 +95,14 @@ ipcMain.handle('oauth2:refresh', async (_e, cfg: OAuth2Config, ctx: { cookies: C
   } catch (err) {
     return { ok: false, error: (err as Error).message, cookies: jar.toJSON() }
   }
+})
+
+registerRealtime()
+registerMocks()
+
+ipcMain.handle('dialog:pickFiles', async (_e, extensions?: string[]) => {
+  const r = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: extensions ? [{ name: extensions.join(', '), extensions }] : [] })
+  return r.canceled ? [] : r.filePaths
 })
 
 ipcMain.handle('dialog:pickFile', async () => {

@@ -3,6 +3,8 @@ import { newCollection, newEnvironment, newFolder, newRequest, newRequestItem, u
 import { prepareRequest } from '@core/prepare'
 import { insertItem, locate, parentAuths, removeItem, runnableRequests, scriptChain, updateItem } from '@core/tree'
 import { applyVarChanges, toVarMap } from '@core/varsync'
+import { introspectionRequest, schemaFromResponse } from '@core/graphql'
+import type { GraphQLSchema } from 'graphql'
 import type { Scope } from '@core/variables'
 import type {
   ApiRequest,
@@ -22,12 +24,18 @@ import type {
   RunStep,
   RunVariables,
   TestResult,
-  Workspace
+  Workspace,
+  StreamEvent,
+  GrpcServiceInfo
 } from '@core/types'
 import { DEFAULT_NETWORK } from '@core/types'
+import type { MockLogEntry } from '@core/mockRoutes'
 
 const HISTORY_LIMIT = 200
 const CONSOLE_LIMIT = 1000
+const LIVE_EVENT_LIMIT = 2000
+let unsubscribeLive: (() => void) | undefined
+let unsubscribeMock: (() => void) | undefined
 
 export interface Tab {
   id: string
@@ -43,6 +51,34 @@ export interface Tab {
   sentAt?: number
   tests?: TestResult[]
   scriptError?: string
+  /** WebSocket / SSE / gRPC connection state and message log. */
+  live?: LiveState
+}
+
+export interface LiveState {
+  sessionId: string
+  status: 'connecting' | 'open' | 'closed'
+  events: StreamEvent[]
+}
+
+export interface MockState {
+  status: 'starting' | 'running' | 'stopped'
+  port: number
+  error?: string
+  log: MockLogEntry[]
+}
+
+export interface GrpcState {
+  loading: boolean
+  services?: GrpcServiceInfo[]
+  error?: string
+}
+
+export interface SchemaState {
+  loading: boolean
+  schema?: GraphQLSchema
+  error?: string
+  fetchedAt?: number
 }
 
 export interface RunnerState {
@@ -67,6 +103,7 @@ export type Modal =
   | { kind: 'runner'; collectionId: string; folderId: string | null }
   | { kind: 'cookies'; domain?: string }
   | { kind: 'settings' }
+  | { kind: 'mock'; collectionId: string }
   | { kind: 'prompt'; title: string; initial: string; onSubmit: (value: string) => void }
 
 interface State {
@@ -80,6 +117,12 @@ interface State {
   console: ConsoleEntry[]
   consoleOpen: boolean
   runner: RunnerState | null
+  /** GraphQL schemas by tab id (in memory only; refetched per session). */
+  schemas: Record<string, SchemaState>
+  /** gRPC services discovered from each tab's proto files. */
+  grpc: Record<string, GrpcState>
+  /** Mock servers by collection id. */
+  mocks: Record<string, MockState>
 
   init(): Promise<void>
   setSidebar(v: SidebarView): void
@@ -99,6 +142,17 @@ interface State {
   saveTabAs(tabId: string, collectionId: string, folderId: string | null, name: string): void
   send(tabId: string): Promise<void>
   cancel(tabId: string): void
+  fetchSchema(tabId: string): Promise<void>
+  connect(tabId: string): Promise<void>
+  disconnect(tabId: string): void
+  sendLive(tabId: string, text: string): void
+  endLive(tabId: string): void
+  clearLive(tabId: string): void
+  loadProtos(tabId: string): Promise<void>
+  saveExample(tabId: string, name: string): void
+  deleteExample(tabId: string, exampleId: string): void
+  startMock(collectionId: string, port: number): Promise<void>
+  stopMock(collectionId: string): Promise<void>
 
   // collections
   addCollection(c?: Collection): string
@@ -181,6 +235,24 @@ function applyRunVariables(
   }
 }
 
+/** Everything a single send needs: inherited auth and scripts, variables, cookies, network settings. */
+function runInputFor(ws: Workspace, tab: Tab, request: ApiRequest, withScripts = true) {
+  const loc = tab.itemId ? locate(ws.collections, tab.itemId) : undefined
+  const scripts = withScripts ? scriptChain(loc?.collection, loc?.folders ?? [], request) : { pre: [], test: [] }
+  const before = persistentVars(ws, loc?.collection.id)
+  const input: RunRequestInput = {
+    request,
+    parentAuths: loc ? parentAuths(loc) : [],
+    preRequestScripts: scripts.pre,
+    testScripts: scripts.test,
+    variables: { local: {}, data: {}, ...before },
+    cookies: ws.cookies ?? [],
+    network: ws.settings,
+    info: { requestName: request.name, requestId: request.id, iteration: 0, iterationCount: 1 }
+  }
+  return { input, before, loc }
+}
+
 export function prepareTab(ws: Workspace, tab: Tab): PreparedRequest {
   const loc = tab.itemId ? locate(ws.collections, tab.itemId) : undefined
   return prepareRequest(tab.draft, scopesFor(ws, tab.itemId), loc ? parentAuths(loc) : [])
@@ -189,9 +261,16 @@ export function prepareTab(ws: Workspace, tab: Tab): PreparedRequest {
 export const useStore = create<State>((set, get) => {
   /** Apply a change to the workspace and schedule a save. */
   const mutate = (fn: (ws: Workspace) => Workspace): void => {
-    const workspace = fn(get().workspace)
+    const before = get().workspace
+    const workspace = fn(before)
     set({ workspace })
     persist(workspace)
+    // Running mock servers follow collection edits (new examples, renamed paths…) immediately.
+    for (const [id, m] of Object.entries(get().mocks)) {
+      if (m.status !== 'running') continue
+      const c = workspace.collections.find((x) => x.id === id)
+      if (c && c !== before.collections.find((x) => x.id === id)) void window.api.mockUpdate(id, c)
+    }
   }
   const patchTab = (id: string, patch: Partial<Tab>): void =>
     set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, ...patch } : t)) }))
@@ -213,11 +292,29 @@ export const useStore = create<State>((set, get) => {
     console: [],
     consoleOpen: false,
     runner: null,
+    schemas: {},
+    grpc: {},
+    mocks: {},
 
     async init() {
       const workspace = await window.api.loadWorkspace()
       const tab = blankTab()
       set({ workspace, ready: true, tabs: [tab], activeTabId: tab.id })
+      unsubscribeMock?.()
+      unsubscribeMock = window.api.onMockLog((id, entry) =>
+        set((s) => (s.mocks[id] ? { mocks: { ...s.mocks, [id]: { ...s.mocks[id], log: [...s.mocks[id].log, entry].slice(-500) } } } : {}))
+      )
+      // One listener for every live session; events find their tab by session id.
+      unsubscribeLive?.()
+      unsubscribeLive = window.api.onRealtimeEvent((id, ev) =>
+        set((s) => ({
+          tabs: s.tabs.map((t) => {
+            if (t.live?.sessionId !== id) return t
+            const status = ev.kind === 'open' ? 'open' : ev.kind === 'close' ? 'closed' : t.live.status
+            return { ...t, live: { ...t.live, status, events: [...t.live.events, ev].slice(-LIVE_EVENT_LIMIT) } }
+          })
+        }))
+      )
     },
     setSidebar: (sidebar) => set({ sidebar }),
     openModal: (modal) => set({ modal }),
@@ -256,10 +353,13 @@ export const useStore = create<State>((set, get) => {
         const idx = s.tabs.findIndex((t) => t.id === id)
         const tab = s.tabs[idx]
         if (tab?.execId) void window.api.cancel(tab.execId)
+        if (tab?.live && tab.live.status !== 'closed') void window.api.realtimeClose(tab.live.sessionId)
         let tabs = s.tabs.filter((t) => t.id !== id)
+        const { [id]: _dropped, ...schemas } = s.schemas
+        const { [id]: _droppedGrpc, ...grpc } = s.grpc
         if (tabs.length === 0) tabs = [blankTab()]
         const activeTabId = s.activeTabId === id ? tabs[Math.min(idx, tabs.length - 1)].id : s.activeTabId
-        return { tabs, activeTabId }
+        return { tabs, activeTabId, schemas, grpc }
       })
     },
     activateTab: (activeTabId) => set({ activeTabId }),
@@ -291,20 +391,7 @@ export const useStore = create<State>((set, get) => {
       const tab = get().tabs.find((t) => t.id === tabId)
       if (!tab || tab.loading || !tab.draft.url.trim()) return
       const ws = get().workspace
-      const loc = tab.itemId ? locate(ws.collections, tab.itemId) : undefined
-      const scripts = scriptChain(loc?.collection, loc?.folders ?? [], tab.draft)
-      const before = persistentVars(ws, loc?.collection.id)
-      const input: RunRequestInput = {
-        request: tab.draft,
-        parentAuths: loc ? parentAuths(loc) : [],
-        preRequestScripts: scripts.pre,
-        testScripts: scripts.test,
-        variables: { local: {}, data: {}, ...before },
-        info: { requestName: tab.draft.name, requestId: tab.draft.id, iteration: 0, iterationCount: 1 }
-      }
-
-      input.cookies = ws.cookies ?? []
-      input.network = ws.settings
+      const { input, before, loc } = runInputFor(ws, tab, tab.draft)
 
       const execId = uid()
       patchTab(tabId, { loading: true, execId, error: undefined, scriptError: undefined, tests: undefined, sentAt: Date.now() })
@@ -349,6 +436,119 @@ export const useStore = create<State>((set, get) => {
         scriptError: run.scriptError,
         tests: run.tests
       })
+    },
+    async fetchSchema(tabId) {
+      const tab = get().tabs.find((t) => t.id === tabId)
+      if (!tab || !tab.draft.url.trim()) return
+      const setSchema = (st: SchemaState): void => set((s) => ({ schemas: { ...s.schemas, [tabId]: st } }))
+      setSchema({ ...get().schemas[tabId], loading: true, error: undefined })
+      const { input } = runInputFor(get().workspace, tab, introspectionRequest(tab.draft), false)
+      const run = await window.api.runRequest(uid(), input)
+      if (run.cookies) get().setCookies(run.cookies)
+      const r = run.result
+      if (!r) return setSchema({ loading: false, error: run.scriptError ?? 'Request not sent' })
+      if (!r.ok) return setSchema({ loading: false, error: r.error })
+      try {
+        setSchema({ loading: false, schema: schemaFromResponse(r.response.status, r.response.body), fetchedAt: Date.now() })
+      } catch (e) {
+        setSchema({ loading: false, error: (e as Error).message })
+      }
+    },
+    async connect(tabId) {
+      const tab = get().tabs.find((t) => t.id === tabId)
+      if (!tab || !tab.draft.url.trim()) return
+      if (tab.live && tab.live.status !== 'closed') get().disconnect(tabId)
+      const { input } = runInputFor(get().workspace, tab, tab.draft, false)
+      const sessionId = uid()
+      // gRPC unary/server-streaming calls finish on their own, so keep earlier exchanges visible.
+      const keep = tab.draft.protocol === 'grpc' ? (tab.live?.events ?? []) : []
+      patchTab(tabId, { live: { sessionId, status: 'connecting', events: keep } })
+      const r = await window.api.realtimeOpen(sessionId, {
+        request: input.request,
+        parentAuths: input.parentAuths,
+        variables: input.variables,
+        cookies: input.cookies,
+        network: input.network
+      })
+      if (!r.ok) {
+        set((s) => ({
+          tabs: s.tabs.map((t) =>
+            t.live?.sessionId === sessionId
+              ? { ...t, live: { ...t.live, status: 'closed', events: [...t.live.events, { kind: 'error', data: r.error, timestamp: Date.now() }] } }
+              : t
+          )
+        }))
+      }
+    },
+    disconnect(tabId) {
+      const live = get().tabs.find((t) => t.id === tabId)?.live
+      if (live && live.status !== 'closed') void window.api.realtimeClose(live.sessionId)
+    },
+    sendLive(tabId, text) {
+      const live = get().tabs.find((t) => t.id === tabId)?.live
+      if (live?.status === 'open') void window.api.realtimeSend(live.sessionId, text)
+    },
+    endLive(tabId) {
+      const live = get().tabs.find((t) => t.id === tabId)?.live
+      if (live?.status === 'open') void window.api.realtimeEnd(live.sessionId)
+    },
+    clearLive(tabId) {
+      const live = get().tabs.find((t) => t.id === tabId)?.live
+      if (live) patchTab(tabId, { live: { ...live, events: [] } })
+    },
+    async loadProtos(tabId) {
+      const cfg = get().tabs.find((t) => t.id === tabId)?.draft.grpc
+      if (!cfg?.protoFiles.length) return set((s) => ({ grpc: { ...s.grpc, [tabId]: { loading: false } } }))
+      set((s) => ({ grpc: { ...s.grpc, [tabId]: { ...s.grpc[tabId], loading: true, error: undefined } } }))
+      const r = await window.api.grpcDescribe(cfg.protoFiles, cfg.includeDirs)
+      set((s) => ({ grpc: { ...s.grpc, [tabId]: r.ok ? { loading: false, services: r.services } : { loading: false, error: r.error } } }))
+    },
+    saveExample(tabId, name) {
+      const tab = get().tabs.find((t) => t.id === tabId)
+      const res = tab?.response
+      if (!tab || !res) return
+      const example = {
+        id: uid(),
+        name,
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+        body: res.bodyEncoding === 'utf8' ? res.body : ''
+      }
+      const examples = [...(tab.draft.examples ?? []), example]
+      patchTab(tabId, { draft: { ...tab.draft, examples } })
+      // Examples belong to the saved request, like Postman: write them through without saving other edits.
+      if (tab.itemId) {
+        const itemId = tab.itemId
+        mapCollectionOf(itemId, (c) => ({ ...c, items: updateItem(c.items, itemId, (i) => (i.type === 'request' ? { ...i, request: { ...i.request, examples } } : i)) }))
+        get().showToast(`Saved example "${name}"`)
+      } else get().showToast('Example added — save the request to a collection to keep it')
+    },
+    deleteExample(tabId, exampleId) {
+      const tab = get().tabs.find((t) => t.id === tabId)
+      if (!tab) return
+      const examples = (tab.draft.examples ?? []).filter((e) => e.id !== exampleId)
+      patchTab(tabId, { draft: { ...tab.draft, examples } })
+      if (tab.itemId) {
+        const itemId = tab.itemId
+        mapCollectionOf(itemId, (c) => ({ ...c, items: updateItem(c.items, itemId, (i) => (i.type === 'request' ? { ...i, request: { ...i.request, examples } } : i)) }))
+      }
+    },
+    async startMock(collectionId, port) {
+      const c = get().workspace.collections.find((x) => x.id === collectionId)
+      if (!c) return
+      const setMock = (m: Partial<MockState>): void =>
+        set((s) => {
+          const prev: MockState = (s.mocks[collectionId] as MockState | undefined) ?? { status: 'stopped', port, log: [] }
+          return { mocks: { ...s.mocks, [collectionId]: { ...prev, ...m } } }
+        })
+      setMock({ status: 'starting', port, error: undefined })
+      const r = await window.api.mockStart(collectionId, c, port)
+      setMock(r.ok ? { status: 'running', port: r.port } : { status: 'stopped', error: r.error })
+    },
+    async stopMock(collectionId) {
+      await window.api.mockStop(collectionId)
+      set((s) => (s.mocks[collectionId] ? { mocks: { ...s.mocks, [collectionId]: { ...s.mocks[collectionId], status: 'stopped' } } } : {}))
     },
     cancel(tabId) {
       const tab = get().tabs.find((t) => t.id === tabId)

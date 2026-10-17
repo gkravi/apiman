@@ -134,7 +134,7 @@ export function RunnerModal({ collectionId, folderId, close }: { collectionId: s
                       setSelected(next)
                     }}
                   />
-                  <MethodBadge method={item.request.method} />
+                  <MethodBadge method={item.request.method} protocol={item.request.protocol} />
                   <span className="tree-label" title={[...folders].reverse().map((f) => f.name).concat(item.request.name).join(' / ')}>
                     {item.request.name}
                   </span>

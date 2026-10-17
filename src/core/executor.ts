@@ -14,10 +14,10 @@ import { digestAuthorization } from './digest'
 import { signAwsV4 } from './awsv4'
 import type { ApiResponse, ExecuteResult, NetworkSettings, PreparedBody, PreparedRequest, Timings } from './types'
 
-const USER_AGENT = 'ApiMan/0.1'
+const USER_AGENT = 'ApiMan/0.4'
 const MAX_BODY_BYTES = 50 * 1024 * 1024
 
-async function encodeBody(body: PreparedBody): Promise<{ data?: Buffer; contentType?: string }> {
+export async function encodeBody(body: PreparedBody): Promise<{ data?: Buffer; contentType?: string }> {
   switch (body.kind) {
     case 'none':
       return {}
@@ -81,7 +81,7 @@ interface Hop {
 }
 
 /** Per-hop connection details: TLS material for the target host and an optional proxy. */
-interface Transport {
+export interface Transport {
   verifySsl: boolean
   timeoutMs: number
   tls: Pick<tls.ConnectionOptions, 'ca' | 'cert' | 'key' | 'pfx' | 'passphrase'>
@@ -91,8 +91,8 @@ interface Transport {
 const proxyAuthHeader = (proxy: URL): [string, string][] =>
   proxy.username ? [['Proxy-Authorization', `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')}`]] : []
 
-/** Open a CONNECT tunnel through an HTTP proxy for an https:// target. */
-function connectTunnel(proxy: URL, target: URL, timeoutMs: number, signal: AbortSignal): Promise<net.Socket> {
+/** Open a CONNECT tunnel through an HTTP proxy (used for https:// and wss:// targets). */
+export function connectTunnel(proxy: URL, target: URL, timeoutMs: number, signal: AbortSignal): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
     const port = target.port || '443'
     const req = http.request({
@@ -116,48 +116,46 @@ function connectTunnel(proxy: URL, target: URL, timeoutMs: number, signal: Abort
   })
 }
 
+/**
+ * Create (but don't end) a client request that honours the transport: direct, absolute-URI via an
+ * HTTP proxy, or through a CONNECT tunnel for TLS. Shared by plain sends and streaming (SSE).
+ */
+export async function openClientRequest(method: string, url: URL, headers: [string, string][], tr: Transport, signal: AbortSignal): Promise<http.ClientRequest> {
+  const isHttps = url.protocol === 'https:'
+  const tunnel = tr.proxy && isHttps ? await connectTunnel(tr.proxy, url, tr.timeoutMs, signal) : undefined
+
+  const outHeaders: Record<string, string | string[]> = {}
+  const all = tr.proxy && !isHttps ? [...headers, ...proxyAuthHeader(tr.proxy)] : headers
+  for (const [k, v] of all) {
+    const existing = outHeaders[k]
+    outHeaders[k] = existing === undefined ? v : ([] as string[]).concat(existing, v)
+  }
+  const options: https.RequestOptions = {
+    method,
+    headers: outHeaders,
+    rejectUnauthorized: tr.verifySsl,
+    ...tr.tls,
+    agent: false, // fresh socket per request so connect/TLS timings are real
+    signal
+  }
+  if (tr.proxy && !isHttps) {
+    // Plain HTTP through a proxy: send the absolute URL to the proxy itself.
+    return http.request({ ...options, host: tr.proxy.hostname, port: tr.proxy.port || 80, path: url.toString(), headers: { Host: url.host, ...outHeaders } })
+  }
+  if (tunnel) {
+    return https.request(url, { ...options, createConnection: () => tls.connect({ socket: tunnel, servername: url.hostname, rejectUnauthorized: tr.verifySsl, ...tr.tls }) })
+  }
+  return (isHttps ? https : http).request(url, options)
+}
+
 async function sendOnce(method: string, url: URL, headers: [string, string][], data: Buffer | undefined, tr: Transport, signal: AbortSignal): Promise<Hop> {
   const start = performance.now()
   const t: Omit<Timings, 'total'> = {}
   const elapsed = (): number => Math.round((performance.now() - start) * 10) / 10
-  const isHttps = url.protocol === 'https:'
-
-  let tunnel: net.Socket | undefined
-  if (tr.proxy && isHttps) {
-    tunnel = await connectTunnel(tr.proxy, url, tr.timeoutMs, signal)
-    t.connect = elapsed()
-  }
+  const req = await openClientRequest(method, url, headers, tr, signal)
+  if (tr.proxy && url.protocol === 'https:') t.connect = elapsed()
 
   return new Promise((resolvePromise, reject) => {
-    const outHeaders: Record<string, string | string[]> = {}
-    const all = tr.proxy && !isHttps ? [...headers, ...proxyAuthHeader(tr.proxy)] : headers
-    for (const [k, v] of all) {
-      const existing = outHeaders[k]
-      outHeaders[k] = existing === undefined ? v : ([] as string[]).concat(existing, v)
-    }
-
-    const options: https.RequestOptions = {
-      method,
-      headers: outHeaders,
-      rejectUnauthorized: tr.verifySsl,
-      ...tr.tls,
-      agent: false, // fresh socket per request so connect/TLS timings are real
-      signal
-    }
-    let req: http.ClientRequest
-    if (tr.proxy && !isHttps) {
-      // Plain HTTP through a proxy: send the absolute URL to the proxy itself.
-      req = http.request({ ...options, host: tr.proxy.hostname, port: tr.proxy.port || 80, path: url.toString(), headers: { Host: url.host, ...outHeaders } })
-    } else if (tunnel) {
-      const socket = tunnel
-      req = https.request(url, {
-        ...options,
-        createConnection: () => tls.connect({ socket, servername: url.hostname, rejectUnauthorized: tr.verifySsl, ...tr.tls })
-      })
-    } else {
-      req = (isHttps ? https : http).request(url, options)
-    }
-
     req.setTimeout(tr.timeoutMs, () => req.destroy(new Error(`Request timed out after ${tr.timeoutMs} ms`)))
 
     req.on('socket', (socket) => {
@@ -206,7 +204,7 @@ function hostMatches(pattern: string, url: URL): boolean {
   const p = pattern.trim().toLowerCase()
   if (!p) return false
   const [host, port] = p.split(':')
-  if (port && port !== (url.port || (url.protocol === 'https:' ? '443' : '80'))) return false
+  if (port && port !== (url.port || (/^(https|wss|grpcs):$/.test(url.protocol) ? '443' : '80'))) return false
   const h = url.hostname.toLowerCase()
   if (host === '*') return true
   if (host.startsWith('*.')) return h.endsWith(host.slice(1)) || h === host.slice(2)
@@ -232,8 +230,8 @@ async function readCached(path: string): Promise<Buffer> {
   return b
 }
 
-async function tlsFor(url: URL, network?: NetworkSettings): Promise<Transport['tls']> {
-  if (url.protocol !== 'https:' || !network) return {}
+export async function tlsFor(url: URL, network?: NetworkSettings): Promise<Transport['tls']> {
+  if (!/^(https|wss|grpcs):$/.test(url.protocol) || !network) return {}
   const out: Transport['tls'] = {}
   if (network.caPath) out.ca = [...tls.rootCertificates, (await readCached(network.caPath)).toString()]
   const cert = network.certificates.find((c) => hostMatches(c.host, url))
