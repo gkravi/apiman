@@ -42,7 +42,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "cm6-graphql": "^0.2.2",
     "crypto-js": "^4.2.0",
-    "electron": "^44.8.0",
+    "electron": "^44.9.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
     "graphql": "^17.0.2",
