@@ -53,6 +53,15 @@ Without `npm link`, run it as `node out/cli/apiman.cjs …` from the repository 
 - **Environment / globals** — Postman environment files (**Environments → ⋯ → Export**).
 - **Data** — CSV or JSON, one row per iteration, as in the [runner](collection-runner.md#data-driven-runs).
 
+Files that requests upload (form-data files, binary bodies) are resolved against the collection
+file's folder, and must be inside it, so a collection someone else wrote can't make your CI job
+upload `~/.ssh` or cloud credentials. Use `--working-dir <dir>` to point elsewhere, or
+`--insecure-file-read` to lift the restriction.
+
+On a managed machine, `--policy <file>` applies the organisation's
+[policy file](security/enterprise.md#managed-policies) to the run, with the same host, script, TLS
+and proxy rules as the desktop app.
+
 ## Common commands
 
 ```bash

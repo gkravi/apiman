@@ -2,7 +2,9 @@
 // Uses the exact same core as the desktop app: executor, sandbox, runner, cookie jar.
 
 import { mkdir, readFile, writeFile as writeFileRaw } from 'node:fs/promises'
-import { basename, dirname } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path'
+import { mapFilePaths } from '@core/security'
+import { activePolicy, parsePolicy, PolicyError, setActivePolicy } from '@core/policy'
 import { parseArgs } from 'node:util'
 import { importPostmanCollection, importPostmanEnvironment, exportPostmanEnvironment, isPostmanCollection } from '@core/postman'
 import { importOpenApi, isOpenApi, parseSpecText } from '@core/openapi'
@@ -52,6 +54,10 @@ Options for run:
       --reporter-junit-export <f> Where to write the JUnit XML (default: apiman-report.xml)
       --export-environment <file> Save the environment (with script changes) after the run
       --export-globals <file>     Save globals after the run
+      --working-dir <dir>         Where relative file paths in the collection are resolved
+                                  (default: the collection file's folder)
+      --insecure-file-read        Allow file uploads from outside the working directory
+      --policy <file>             Enforce a managed policy file (same format as the app's policy.json)
   -h, --help                      Show this help
   -v, --version                   Show the version
 
@@ -133,6 +139,9 @@ export async function main(argv: string[]): Promise<number> {
       'reporter-junit-export': { type: 'string', default: 'apiman-report.xml' },
       'export-environment': { type: 'string' },
       'export-globals': { type: 'string' },
+      'working-dir': { type: 'string' },
+      'insecure-file-read': { type: 'boolean' },
+      policy: { type: 'string' },
       output: { type: 'string', short: 'o' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' }
@@ -146,6 +155,17 @@ export async function main(argv: string[]): Promise<number> {
   if (values.help || positionals.length === 0) {
     process.stdout.write(HELP)
     return positionals.length === 0 && !values.help ? 2 : 0
+  }
+  // --policy: the same restrictions as a managed install of the app, for CI on managed runners.
+  if (values.policy) {
+    try {
+      const { policy, warnings } = parsePolicy(await readJsonFile(values.policy, 'policy'), values.policy)
+      for (const w of warnings) process.stderr.write(`apiman: ${w}\n`)
+      setActivePolicy(policy)
+    } catch (e) {
+      if (e instanceof PolicyError) throw new UsageError(e.message)
+      throw e
+    }
   }
   const [command, file] = positionals
   if (command === 'docs' && file) {
@@ -164,7 +184,16 @@ export async function main(argv: string[]): Promise<number> {
     return n
   }
 
-  const collection = await loadCollection(file)
+  // File uploads resolve against the working directory and, unless --insecure-file-read, must stay
+  // inside it: a collection from someone else can't make the run upload ~/.ssh or ~/.aws.
+  const workingDir = resolvePath(values['working-dir'] ?? dirname(file))
+  const collection = mapFilePaths(await loadCollection(file), (p, requestName) => {
+    const abs = isAbsolute(p) ? p : resolvePath(workingDir, p)
+    const rel = relative(workingDir, abs)
+    if (!values['insecure-file-read'] && (rel.startsWith('..') || isAbsolute(rel)))
+      throw new UsageError(`"${requestName}" uploads ${p}, which is outside the working directory ${workingDir}. Move the file there, set --working-dir, or pass --insecure-file-read.`)
+    return abs
+  })
   const env = (await loadVariables(values.environment, 'environment')) ?? { id: 'cli', name: 'cli', variables: [] }
   const globalsEnv = await loadVariables(values.globals, 'globals')
   const reporters = new Set(values.reporters.split(',').map((r) => r.trim()).filter(Boolean))
@@ -195,6 +224,7 @@ export async function main(argv: string[]): Promise<number> {
     if (!folderId) throw new UsageError(`Folder "${values.folder}" not found in the collection`)
   }
 
+  if (values.insecure && activePolicy().forbidInsecureTls) process.stderr.write('apiman: --insecure is ignored: the policy requires TLS verification\n')
   const timeout = num(values['timeout-request'], '--timeout-request')
   const steps: RunStep[] = runnableRequests(collection, folderId).map(({ item, folders }) => {
     const scripts = scriptChain(collection, folders, item.request)
@@ -248,6 +278,7 @@ export async function main(argv: string[]): Promise<number> {
     {
       signal: ctrl.signal,
       network,
+      collection,
       onResult: (r) => {
         results.push(r)
         cli?.result(r, effectiveIterations)

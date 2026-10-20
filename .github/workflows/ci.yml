@@ -24,6 +24,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Fail on known high/critical vulnerabilities in what ships (dev tooling is reviewed separately).
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

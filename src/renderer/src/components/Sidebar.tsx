@@ -6,6 +6,7 @@ import type { CollectionItem, Collection } from '@core/types'
 import { useStore, type SidebarView } from '../store'
 import { MethodBadge } from './MethodBadge'
 import { MonitorsPanel } from './Monitors'
+import { ManagedBadge } from './Managed'
 import { CollectionsIcon, EnvironmentsIcon, FolderIcon, HistoryIcon, MonitorsIcon } from './Icons'
 
 function ItemMenu({ items }: { items: { label: string; onClick(): void; danger?: boolean }[] }): React.JSX.Element {
@@ -240,6 +241,7 @@ function Environments(): React.JSX.Element {
 
 function History(): React.JSX.Element {
   const s = useStore()
+  const retention = s.policy.policy.historyRetentionDays
   const groups = new Map<string, typeof s.workspace.history>()
   for (const h of s.workspace.history) {
     const day = new Date(h.timestamp).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
@@ -255,6 +257,11 @@ function History(): React.JSX.Element {
           </button>
         )}
       </div>
+      {retention !== undefined && (
+        <div className="managed-banner small">
+          <ManagedBadge /> {retention === 0 ? 'History isn’t kept.' : `History older than ${retention} day${retention === 1 ? '' : 's'} is deleted.`}
+        </div>
+      )}
       <div className="sidebar-scroll">
         {s.workspace.history.length === 0 && <div className="empty-hint">Requests you send show up here.</div>}
         {[...groups].map(([day, entries]) => (

@@ -1,4 +1,5 @@
 import type { MockLogEntry } from '../core/mockRoutes'
+import type { PolicyInfo } from '../core/policy'
 import type {
   Collection,
   GrpcServiceInfo,
@@ -35,7 +36,7 @@ export interface Api {
     steps: RunStep[],
     vars: PersistentVars,
     options: RunnerOptions,
-    ctx: NetContext
+    ctx: NetContext & { collection?: Collection }
   ): Promise<{ summary: RunnerSummary; variables: PersistentVars; cookies: Cookie[] }>
   oauth2Token(cfg: OAuth2Config, ctx: NetContext): Promise<TokenResponse>
   oauth2Refresh(cfg: OAuth2Config, ctx: NetContext): Promise<TokenResponse>
@@ -61,6 +62,8 @@ export interface Api {
   saveText(defaultName: string, content: string, extensions: string[]): Promise<boolean>
   /** Desktop notification; clicking it focuses the app. */
   notify(title: string, body: string): Promise<void>
+  /** The administrator-managed policy in force (read-only). */
+  getPolicy(): Promise<PolicyInfo>
 }
 
 declare global {

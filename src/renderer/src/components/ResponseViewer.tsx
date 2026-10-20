@@ -7,6 +7,7 @@ import { formatBytes } from '../format'
 import { Logo } from './Logo'
 import { FilterIcon } from './Icons'
 import { filterJson } from '@core/jsonpath'
+import { responseReference } from '@core/templateParse'
 
 type View = 'body' | 'headers' | 'cookies' | 'tests' | 'timeline'
 type BodyView = 'pretty' | 'raw' | 'preview'
@@ -225,6 +226,21 @@ export function ResponseViewer({ tab }: { tab: Tab }): React.JSX.Element {
                   ✕
                 </button>
               )}
+              <button
+                className="btn small ghost"
+                disabled={!tab.itemId}
+                title={
+                  tab.itemId
+                    ? `Copy {{ $response(…) }} for ${filter.trim() ? 'this path' : 'the whole body'} — paste it into another request to chain them`
+                    : 'Save the request to a collection to reference its response'
+                }
+                onClick={() => {
+                  void navigator.clipboard.writeText(responseReference(tab.draft.name, filtered?.error ? undefined : filter))
+                  useStore.getState().showToast('Reference copied — paste it into another request')
+                }}
+              >
+                Copy reference
+              </button>
             </div>
           )}
           <div className="response-body">

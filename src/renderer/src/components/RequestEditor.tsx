@@ -16,6 +16,7 @@ import { GrpcServicePanel, MessageComposer } from './LiveEditors'
 import { grpcMethodOf } from '../format'
 import { ExamplesPanel } from './ExamplesPanel'
 import { DocsEditor } from './DocsEditor'
+import { ManagedBadge } from './Managed'
 
 type Section = 'params' | 'auth' | 'headers' | 'body' | 'scripts' | 'settings' | 'message' | 'service' | 'examples' | 'docs'
 
@@ -38,6 +39,7 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
   const s = useStore()
   const [section, setSection] = useState<Section>(() => SECTION_ORDER[tab.draft.protocol ?? 'http'][0])
   const r = tab.draft
+  const tlsLocked = !!s.policy.policy.forbidInsecureTls
   const update = (patch: Parameters<typeof s.updateDraft>[1]): void => s.updateDraft(tab.id, patch)
 
   const scopes = scopesFor(s.workspace, tab.itemId)
@@ -256,8 +258,13 @@ export function RequestEditor({ tab }: { tab: Tab }): React.JSX.Element {
               </label>
             )}
             <label className="check">
-              <input type="checkbox" checked={r.settings.verifySsl} onChange={(e) => update({ settings: { ...r.settings, verifySsl: e.target.checked } })} />
-              Verify SSL certificates
+              <input
+                type="checkbox"
+                checked={r.settings.verifySsl || tlsLocked}
+                disabled={tlsLocked}
+                onChange={(e) => update({ settings: { ...r.settings, verifySsl: e.target.checked } })}
+              />
+              Verify SSL certificates {tlsLocked && <ManagedBadge />}
             </label>
             <label className="field">
               {isLive ? (protocol === 'grpc' ? 'Deadline for unary calls (ms)' : 'Connect timeout (ms)') : 'Timeout (ms)'}

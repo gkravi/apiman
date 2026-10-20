@@ -53,6 +53,19 @@ See [Command-line runner](../cli.md) for installation and examples.
 
 A client certificate given on the command line is used for every host.
 
+### File uploads
+
+| Option | Description |
+|---|---|
+| `--working-dir <dir>` | Folder that relative file paths (form-data files, binary bodies) are resolved against. Default: the collection file's folder |
+| `--insecure-file-read` | Allow uploads from outside the working directory. Without it, a run that would upload such a file stops with exit code `2` before sending anything |
+
+### Managed policy
+
+| Option | Description |
+|---|---|
+| `--policy <file>` | Enforce an administrator policy file (the same JSON as the desktop app's `policy.json`): blocked or allowed hosts, scripts or `pm.sendRequest` turned off, required TLS verification, an enforced proxy and CA. An invalid file stops the run with exit code `2`. See [managed policies](../security/enterprise.md#managed-policies) |
+
 ### Output
 
 | Option | Description |

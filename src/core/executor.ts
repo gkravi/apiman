@@ -12,6 +12,7 @@ import tls from 'node:tls'
 import { CookieJar } from './cookies'
 import { digestAuthorization } from './digest'
 import { signAwsV4 } from './awsv4'
+import { activePolicy, assertHostAllowed, effectiveNetwork, effectiveVerifySsl } from './policy'
 import pkg from '../../package.json'
 import type { ApiResponse, ExecuteResult, NetworkSettings, PreparedBody, PreparedRequest, Timings } from './types'
 
@@ -260,7 +261,9 @@ const friendlyError = (err: unknown): string => {
     case 'DEPTH_ZERO_SELF_SIGNED_CERT':
     case 'SELF_SIGNED_CERT_IN_CHAIN':
     case 'UNABLE_TO_VERIFY_LEAF_SIGNATURE':
-      return `SSL error: ${e.message}. Disable "Verify SSL" in request settings to bypass.`
+      return activePolicy().forbidInsecureTls
+        ? `SSL error: ${e.message}. Your organisation's policy requires verified certificates; ask your administrator to add this server's CA.`
+        : `SSL error: ${e.message}. Disable "Verify SSL" in request settings to bypass.`
   }
   return e?.message ?? String(err)
 }
@@ -275,6 +278,8 @@ export interface ExecuteOptions {
 
 export async function execute(req: PreparedRequest, signal: AbortSignal = new AbortController().signal, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
   const started = performance.now()
+  // Managed policy: the enforced proxy/CA replace the user's, and every hop's host is checked.
+  const network = effectiveNetwork(opts.network)
   try {
     let url = new URL(req.url)
     const origin = url.host
@@ -298,11 +303,12 @@ export async function execute(req: PreparedRequest, signal: AbortSignal = new Ab
       const cookie = [url.host === origin ? userCookie : undefined, opts.jar?.cookieHeader(url)].filter(Boolean).join('; ')
       let hopHeaders: [string, string][] = cookie ? [...headers, ['Cookie', cookie]] : headers
       if (req.awsv4) hopHeaders = signAwsV4(method, url, hopHeaders, data, req.awsv4)
+      assertHostAllowed(url)
       const transport: Transport = {
-        verifySsl: req.settings.verifySsl,
+        verifySsl: effectiveVerifySsl(req.settings.verifySsl),
         timeoutMs: req.settings.timeoutMs,
-        tls: await tlsFor(url, opts.network),
-        proxy: proxyFor(url, opts.network)
+        tls: await tlsFor(url, network),
+        proxy: proxyFor(url, network)
       }
       const hop = await sendOnce(method, url, hopHeaders, data, transport, signal)
       const header = (name: string): string | undefined => hop.headers.find(([k]) => k.toLowerCase() === name)?.[1]

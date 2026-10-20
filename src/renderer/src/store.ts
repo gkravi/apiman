@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { collectPrompts, requestTexts } from '@core/templateParse'
 import { newCollection, newEnvironment, newFolder, newRequest, newRequestItem, uid } from '@core/factory'
 import { prepareRequest } from '@core/prepare'
 import { insertItem, locate, parentAuths, removeItem, runnableRequests, scriptChain, updateItem } from '@core/tree'
@@ -31,6 +32,7 @@ import type {
   GrpcServiceInfo
 } from '@core/types'
 import { DEFAULT_NETWORK } from '@core/types'
+import { pruneHistory, setActivePolicy, type PolicyInfo } from '@core/policy'
 import type { MockLogEntry } from '@core/mockRoutes'
 import { applyTheme, loadThemePref, resolveTheme, saveThemePref, type Theme, type ThemePref } from './theme'
 
@@ -109,6 +111,7 @@ export type Modal =
   | { kind: 'mock'; collectionId: string }
   | { kind: 'monitor'; monitorId: string | null }
   | { kind: 'prompt'; title: string; initial: string; onSubmit: (value: string) => void }
+  | { kind: 'templatePrompts'; requestName: string; prompts: { label: string; defaultValue: string }[]; onSubmit: (answers: Record<string, string>) => void }
 
 interface State {
   ready: boolean
@@ -151,10 +154,11 @@ interface State {
   updateDraft(tabId: string, patch: Partial<ApiRequest>): void
   saveTab(tabId: string): void
   saveTabAs(tabId: string, collectionId: string, folderId: string | null, name: string): void
-  send(tabId: string): Promise<void>
+  /** Send a tab; asks for any {{ $prompt() }} values first unless `prompts` are given. */
+  send(tabId: string, prompts?: Record<string, string>): Promise<void>
   cancel(tabId: string): void
   fetchSchema(tabId: string): Promise<void>
-  connect(tabId: string): Promise<void>
+  connect(tabId: string, prompts?: Record<string, string>): Promise<void>
   disconnect(tabId: string): void
   sendLive(tabId: string, text: string): void
   endLive(tabId: string): void
@@ -165,6 +169,8 @@ interface State {
   startMock(collectionId: string, port: number): Promise<void>
   /** Ids of monitors currently running. */
   monitorsRunning: string[]
+  /** The administrator-managed policy (read-only; enforced in the main process). */
+  policy: PolicyInfo
   saveMonitor(m: Monitor): void
   deleteMonitor(id: string): void
   runMonitor(id: string): Promise<void>
@@ -270,6 +276,7 @@ function runInputFor(ws: Workspace, tab: Tab, request: ApiRequest, withScripts =
     variables: { local: {}, data: {}, ...before },
     cookies: ws.cookies ?? [],
     network: ws.settings,
+    collection: loc?.collection,
     info: { requestName: request.name, requestId: request.id, iteration: 0, iterationCount: 1 }
   }
   return { input, before, loc }
@@ -292,7 +299,28 @@ export function prepareTab(ws: Workspace, tab: Tab): PreparedRequest {
   return prepareRequest(tab.draft, scopesFor(ws, tab.itemId), loc ? parentAuths(loc) : [])
 }
 
+/** Last answers to {{ $prompt('Label') }}, so the dialog remembers them during this session. */
+const promptAnswers: Record<string, string> = {}
+
 export const useStore = create<State>((set, get) => {
+  /** If the request has $prompt() templates, open the dialog (calling `then` with the answers) and return true. */
+  const askForPrompts = (request: ApiRequest, then: (answers: Record<string, string>) => void): boolean => {
+    const prompts = collectPrompts(requestTexts(request))
+    if (!prompts.length) return false
+    set({
+      modal: {
+        kind: 'templatePrompts',
+        requestName: request.name,
+        prompts: prompts.map((p) => ({ ...p, defaultValue: promptAnswers[p.label] ?? p.defaultValue })),
+        onSubmit: (answers) => {
+          Object.assign(promptAnswers, answers)
+          then(answers)
+        }
+      }
+    })
+    return true
+  }
+
   /** Apply a change to the workspace and schedule a save. */
   const mutate = (fn: (ws: Workspace) => Workspace): void => {
     const before = get().workspace
@@ -333,11 +361,14 @@ export const useStore = create<State>((set, get) => {
     grpc: {},
     mocks: {},
     monitorsRunning: [],
+    policy: { policy: {}, sources: [] },
 
     async init() {
-      const workspace = await window.api.loadWorkspace()
+      const [workspace, policy] = await Promise.all([window.api.loadWorkspace(), window.api.getPolicy()])
+      // Mirrors the main process's policy here only for display and history pruning.
+      setActivePolicy(policy.policy)
       const tab = blankTab()
-      set({ workspace, ready: true, tabs: [tab], activeTabId: tab.id })
+      set({ workspace, policy, ready: true, tabs: [tab], activeTabId: tab.id })
       unsubscribeMock?.()
       unsubscribeMock = window.api.onMockLog((id, entry) =>
         set((s) => (s.mocks[id] ? { mocks: { ...s.mocks, [id]: { ...s.mocks[id], log: [...s.mocks[id].log, entry].slice(-500) } } } : {}))
@@ -437,11 +468,13 @@ export const useStore = create<State>((set, get) => {
       set({ modal: null })
       get().showToast(`Saved to collection`)
     },
-    async send(tabId) {
+    async send(tabId, prompts) {
       const tab = get().tabs.find((t) => t.id === tabId)
       if (!tab || tab.loading || !tab.draft.url.trim()) return
+      if (!prompts && askForPrompts(tab.draft, (answers) => void get().send(tabId, answers))) return
       const ws = get().workspace
       const { input, before, loc } = runInputFor(ws, tab, tab.draft)
+      input.prompts = prompts
 
       const execId = uid()
       patchTab(tabId, { loading: true, execId, error: undefined, scriptError: undefined, tests: undefined, sentAt: Date.now() })
@@ -454,7 +487,7 @@ export const useStore = create<State>((set, get) => {
         return {
           ...next,
           cookies: run.cookies,
-          history: [
+          history: pruneHistory([
             {
               id: uid(),
               timestamp: Date.now(),
@@ -463,7 +496,7 @@ export const useStore = create<State>((set, get) => {
               durationMs: result?.ok ? result.response.timings.total : undefined
             },
             ...next.history
-          ].slice(0, HISTORY_LIMIT)
+          ]).slice(0, HISTORY_LIMIT)
         }
       })
 
@@ -504,9 +537,10 @@ export const useStore = create<State>((set, get) => {
         setSchema({ loading: false, error: (e as Error).message })
       }
     },
-    async connect(tabId) {
+    async connect(tabId, prompts) {
       const tab = get().tabs.find((t) => t.id === tabId)
       if (!tab || !tab.draft.url.trim()) return
+      if (!prompts && askForPrompts(tab.draft, (answers) => void get().connect(tabId, answers))) return
       if (tab.live && tab.live.status !== 'closed') get().disconnect(tabId)
       const { input } = runInputFor(get().workspace, tab, tab.draft, false)
       const sessionId = uid()
@@ -518,7 +552,9 @@ export const useStore = create<State>((set, get) => {
         parentAuths: input.parentAuths,
         variables: input.variables,
         cookies: input.cookies,
-        network: input.network
+        network: input.network,
+        collection: input.collection,
+        prompts
       })
       if (!r.ok) {
         set((s) => ({
@@ -662,7 +698,7 @@ export const useStore = create<State>((set, get) => {
         }))
       })
       try {
-        const { summary, variables, cookies } = await window.api.startRunner(runId, steps, before, options, { cookies: ws.cookies ?? [], network: ws.settings })
+        const { summary, variables, cookies } = await window.api.startRunner(runId, steps, before, options, { cookies: ws.cookies ?? [], network: ws.settings, collection })
         mutate((w) => ({ ...(persistVariables ? applyRunVariables(w, collectionId, before, variables) : w), cookies }))
         set((s) => ({ runner: s.runner?.runId === runId ? { ...s.runner, status: 'done', summary } : s.runner }))
       } catch (e) {
@@ -709,7 +745,7 @@ export const useStore = create<State>((set, get) => {
           collectionSteps(collection, null),
           persistentVars(ws, collection.id, monitor.environmentId),
           { iterations: 1, delayMs: 0, data: [], stopOnError: false },
-          { cookies: [], network: ws.settings }
+          { cookies: [], network: ws.settings, collection }
         )
         record({
           id: runId,

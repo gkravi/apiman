@@ -4,6 +4,27 @@ All notable changes to ApiMan. Versions follow [semantic versioning](https://sem
 
 ## Unreleased
 
+### Fixed
+- **macOS: "ApiMan is damaged and can't be opened."** The 0.5.0 macOS downloads had an invalid
+  signature. Builds are now validly signed (ad-hoc until a Developer ID is configured), and the
+  release workflow refuses to publish a macOS build whose signature doesn't verify.
+
+### Security
+- **Security audit** ([report](docs/security/audit.md)) with an
+  [enterprise deployment guide](docs/security/enterprise.md) and a [security policy](SECURITY.md).
+- **Credentials are encrypted at rest** with the OS keychain (passwords, tokens, client secrets,
+  AWS keys, certificate passphrases, cookies, secret variables), and `workspace.json` is readable by
+  your user only.
+- **Imported collections can't upload your files**: file attachments are cleared on import. The
+  CLI only uploads files inside the working directory (`--working-dir`, `--insecure-file-read`).
+- **Mock servers** only allow CORS from local origins and reject non-local `Host` headers
+  (DNS rebinding).
+- A script that runs out of memory no longer disables scripting until restart.
+- Hardened Electron: IPC only from the app's own page, exact-match navigation guard, no device
+  permissions or `<webview>`, and fuses that switch off `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and
+  `--inspect` and enforce ASAR integrity in packaged builds.
+- CI: `npm audit` gate, CodeQL and Dependabot. Releases ship SHA-256 checksums and a CycloneDX SBOM.
+
 ### Changed
 - **New brand.** A new logo (an "A" sending a request) and app icon, an iris → azure → cyan palette
   replacing the orange accent (which was Postman's brand colour), cooler ink-tinted dark surfaces,
@@ -12,6 +33,26 @@ All notable changes to ApiMan. Versions follow [semantic versioning](https://sem
   social preview image.
 
 ### Added
+- **Managed policies** for enterprise deployments
+  ([guide](docs/security/enterprise.md#managed-policies)). An administrator-only `policy.json`
+  (or a macOS configuration profile) can turn off scripts, `pm.sendRequest` and mock servers,
+  allow-list or block-list destination hosts (HTTP and every redirect, WebSocket, SSE, gRPC),
+  require TLS verification, enforce a proxy and CA bundle, and set history retention. The policy is
+  enforced in the main process; locked controls show **Managed by your organisation**. The CLI
+  applies the same rules with `--policy <file>`.
+- **macOS `.pkg` installer** for MDM deployment (Jamf, Intune, Kandji). The release pipeline signs
+  and notarises it with a Developer ID Installer certificate when one is configured, and Windows
+  builds can be signed with Azure Trusted Signing. The enterprise guide lists the
+  [signing requirements](docs/security/enterprise.md#code-signing-and-compliance) managed fleets
+  usually have.
+- **Request chaining** (Insomnia/Yaak-style): `{{ $response('Login', '$.token') }}` inserts part of
+  another request's response — body, JSONPath match, status or header — sending that request first
+  when needed (`'if-missing'`, `'always'`, `'never'` or a max age in seconds), with its auth,
+  scripts, variables and cookies. Cycles are detected. **Copy reference** in the JSON filter row
+  builds one for you.
+- **Template functions**: `$prompt`, `$base64`, `$urlEncode`, `$hash`, `$hmac`, `$uuid`, `$now`,
+  `$random`, `$jsonPath`, `$lower`, `$upper`, `$trim` and more, nestable, in every request field and
+  live-protocol message. They deliberately can't read files or environment variables.
 - **Command palette** (⌘K / ⌘P): fuzzy search across requests, open tabs, environments, recent history
   and ~25 commands; `>` for commands only.
 - **Light theme**, with System / Light / Dark switching from the top bar, Settings or the palette.

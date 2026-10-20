@@ -83,3 +83,27 @@ export function runnableRequests(collection: Collection, folderId: string | null
   if (!loc || loc.item.type !== 'folder') return []
   return walk(loc.item.items, [loc.item, ...loc.folders])
 }
+
+/**
+ * Find a request by name for $response(): "Name", or "Folder/Name" (any depth) when names repeat.
+ * The first match in sidebar order wins.
+ */
+export function findRequestByRef(collection: Collection, ref: string): RunnableRequest | undefined {
+  const parts = ref.split('/').map((p) => p.trim()).filter(Boolean)
+  const name = parts.pop()
+  const all: RunnableRequest[] = []
+  const walk = (items: CollectionItem[], folders: Folder[]): void => {
+    for (const i of items) {
+      if (i.type === 'folder') walk(i.items, [i, ...folders])
+      else all.push({ item: i, folders })
+    }
+  }
+  walk(collection.items, [])
+  return all.find(({ item, folders }) => {
+    if (item.request.name !== name) return false
+    if (!parts.length) return true
+    // Folder names must match the end of the request's folder path, outermost first.
+    const path = [...folders].reverse().map((f) => f.name)
+    return parts.every((p, k) => path[path.length - parts.length + k] === p)
+  })
+}

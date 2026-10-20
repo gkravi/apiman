@@ -105,10 +105,13 @@ The [documentation website](https://gkravi.github.io/apiman/) (also browsable [h
 [scripting API](docs/reference/scripting-api.md), [CLI options](docs/reference/cli-options.md) and
 [keyboard shortcuts](docs/reference/keyboard-shortcuts.md).
 
-## Privacy
+## Privacy and security
 
 ApiMan has no accounts, telemetry or cloud sync. Requests go only where you send them, and everything
-is stored in a local file. See [Data, privacy and security](docs/data-and-security.md).
+is stored in a local file with credentials encrypted by your OS keychain. Scripts from shared
+collections run in a WebAssembly sandbox. See [Data, privacy and security](docs/data-and-security.md),
+the [security audit](docs/security/audit.md) and the [enterprise deployment guide](docs/security/enterprise.md).
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 

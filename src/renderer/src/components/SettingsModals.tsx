@@ -3,6 +3,7 @@ import { uid } from '@core/factory'
 import { CookieJar, formatCookie, type Cookie } from '@core/cookies'
 import { DEFAULT_NETWORK, type ClientCertificate } from '@core/types'
 import { useStore } from '../store'
+import { ManagedBadge, policySummary } from './Managed'
 
 function Frame({ title, close, children }: { title: string; close(): void; children: React.ReactNode }): React.JSX.Element {
   useEffect(() => {
@@ -103,25 +104,30 @@ export function CookiesModal({ initialDomain, close }: { initialDomain?: string;
 
 export function SettingsModal({ close }: { close(): void }): React.JSX.Element {
   const s = useStore()
+  const policy = s.policy.policy
+  const managed = policySummary(policy)
   const net = { ...DEFAULT_NETWORK, ...s.workspace.settings }
-  const proxy = net.proxy
+  // Enforced values are shown in place of the user's, read-only.
+  const proxyLocked = !!policy.enforcedProxy
+  const proxy = policy.enforcedProxy ? { enabled: true, ...policy.enforcedProxy } : net.proxy
+  const caLocked = !!policy.enforcedCaPath
   const setCert = (id: string, patch: Partial<ClientCertificate>): void =>
     s.updateNetwork({ certificates: net.certificates.map((c) => (c.id === id ? { ...c, ...patch } : c)) })
   const pick = async (fn: (path: string) => void): Promise<void> => {
     const p = await window.api.pickFile()
     if (p) fn(p)
   }
-  const fileField = (label: string, value: string | undefined, onPick: (p: string | undefined) => void): React.JSX.Element => (
+  const fileField = (label: string, value: string | undefined, onPick: (p: string | undefined) => void, locked = false): React.JSX.Element => (
     <div className="field">
       {label}
       <div className="file-picker">
-        <button className="btn small" onClick={() => void pick(onPick)}>
+        <button className="btn small" disabled={locked} onClick={() => void pick(onPick)}>
           Select file
         </button>
         <span className="muted small file-path" title={value}>
           {value ? value.split(/[\\/]/).pop() : 'None'}
         </span>
-        {value && (
+        {value && !locked && (
           <button className="icon-btn" title="Remove" onClick={() => onPick(undefined)}>
             ✕
           </button>
@@ -132,6 +138,20 @@ export function SettingsModal({ close }: { close(): void }): React.JSX.Element {
 
   return (
     <Frame title="Settings" close={close}>
+      {managed.length > 0 && (
+        <div className="managed-summary">
+          <div className="section-title">
+            Policies <ManagedBadge />
+          </div>
+          <ul>
+            {managed.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+          <p className="hint">Set by your administrator in {s.policy.sources.join(', ')}.</p>
+        </div>
+      )}
+
       <div className="section-title">Appearance</div>
       <div className="seg theme-seg">
         {(['system', 'light', 'dark'] as const).map((t) => (
@@ -141,24 +161,24 @@ export function SettingsModal({ close }: { close(): void }): React.JSX.Element {
         ))}
       </div>
 
-      <div className="section-title">Proxy</div>
+      <div className="section-title">Proxy {proxyLocked && <ManagedBadge />}</div>
       <label className="check">
-        <input type="checkbox" checked={proxy.enabled} onChange={(e) => s.updateNetwork({ proxy: { ...proxy, enabled: e.target.checked } })} />
+        <input type="checkbox" checked={proxy.enabled} disabled={proxyLocked} onChange={(e) => s.updateNetwork({ proxy: { ...proxy, enabled: e.target.checked } })} />
         Use a proxy for requests
       </label>
       <div className="settings-grid wide">
         <label className="field">
           Proxy URL
-          <input placeholder="http://user:pass@proxy.local:8080" value={proxy.url} onChange={(e) => s.updateNetwork({ proxy: { ...proxy, url: e.target.value } })} />
+          <input placeholder="http://user:pass@proxy.local:8080" value={proxy.url} disabled={proxyLocked} onChange={(e) => s.updateNetwork({ proxy: { ...proxy, url: e.target.value } })} />
         </label>
         <label className="field">
           Bypass for hosts
-          <input placeholder="localhost, 127.0.0.1, *.internal" value={proxy.bypass} onChange={(e) => s.updateNetwork({ proxy: { ...proxy, bypass: e.target.value } })} />
+          <input placeholder="localhost, 127.0.0.1, *.internal" value={proxy.bypass} disabled={proxyLocked} onChange={(e) => s.updateNetwork({ proxy: { ...proxy, bypass: e.target.value } })} />
         </label>
       </div>
 
-      <div className="section-title">Certificates</div>
-      {fileField('Extra CA certificates (PEM) — trusted in addition to system roots', net.caPath, (caPath) => s.updateNetwork({ caPath }))}
+      <div className="section-title">Certificates {caLocked && <ManagedBadge />}</div>
+      {fileField('Extra CA certificates (PEM) — trusted in addition to system roots', policy.enforcedCaPath ?? net.caPath, (caPath) => s.updateNetwork({ caPath }), caLocked)}
 
       <div className="field">Client certificates</div>
       {net.certificates.map((c) => (

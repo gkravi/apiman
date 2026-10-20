@@ -14,6 +14,7 @@ HTTP, GraphQL, WebSocket, Server-Sent Events and gRPC, and runs on macOS, Window
 | [Sending requests](requests.md) | URL and params, headers, bodies, settings, responses, code snippets |
 | [Collections and folders](collections.md) | Organising requests, inheritance, history, tabs |
 | [Variables and environments](variables.md) | `{{variables}}`, scopes, environments, globals, dynamic values, secrets |
+| [Request chaining and templates](request-chaining.md) | `{{ $response() }}` to use one response in another; `$hmac`, `$prompt`, `$now` and more |
 | [Authentication](authentication.md) | Basic, Bearer, API key, Digest, AWS Signature, OAuth 2.0 |
 | [Scripts and tests](scripting.md) | Pre-request and post-response scripts, `pm.test`, the console |
 | [Collection runner](collection-runner.md) | Running collections, iterations, data files, flow control |

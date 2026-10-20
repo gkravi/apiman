@@ -3,9 +3,11 @@ import { buildRoutes } from '@core/mockRoutes'
 import { useStore } from '../store'
 import { useEscape } from '../useEscape'
 import { MethodBadge } from './MethodBadge'
+import { ManagedBadge } from './Managed'
 
 export function MockModal({ collectionId, close }: { collectionId: string; close(): void }): React.JSX.Element | null {
   const s = useStore()
+  const mocksOff = !!s.policy.policy.disableMockServers
   const collection = s.workspace.collections.find((c) => c.id === collectionId)
   const mock = s.mocks[collectionId]
   const [port, setPort] = useState(mock?.port ?? 4010)
@@ -45,9 +47,12 @@ export function MockModal({ collectionId, close }: { collectionId: string; close
                 </button>
               </>
             ) : (
-              <button className="btn primary" disabled={mock?.status === 'starting' || routes.length === 0} onClick={() => void s.startMock(collectionId, port)}>
-                {mock?.status === 'starting' ? 'Starting…' : 'Start mock server'}
-              </button>
+              <>
+                <button className="btn primary" disabled={mock?.status === 'starting' || routes.length === 0 || mocksOff} onClick={() => void s.startMock(collectionId, port)}>
+                  {mock?.status === 'starting' ? 'Starting…' : 'Start mock server'}
+                </button>
+                {mocksOff && <ManagedBadge title="Mock servers are turned off by your administrator." />}
+              </>
             )}
           </div>
           {mock?.error && <div className="error-msg">{mock.error}</div>}

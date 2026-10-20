@@ -1,4 +1,5 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, session } from 'electron'
+import { activePolicy, assertHostAllowed } from '@core/policy'
 import { authorizeUrl, clientCredentialsToken, createPkce, exchangeCode, parseRedirect, passwordToken, randomState, refreshToken } from '@core/oauth2'
 import type { ExecuteOptions } from '@core/executor'
 import type { OAuth2Config, OAuth2TokenResult } from '@core/types'
@@ -9,6 +10,11 @@ import type { OAuth2Config, OAuth2TokenResult } from '@core/types'
  */
 function authorizationCode(cfg: OAuth2Config, parent: BrowserWindow | null, opts: ExecuteOptions): Promise<OAuth2TokenResult> {
   if (!cfg.authUrl) return Promise.reject(new Error('Auth URL is required'))
+  try {
+    assertHostAllowed(cfg.authUrl)
+  } catch (e) {
+    return Promise.reject(e)
+  }
   const state = randomState()
   const pkce = cfg.usePkce ? createPkce() : undefined
 
@@ -43,9 +49,14 @@ function authorizationCode(cfg: OAuth2Config, parent: BrowserWindow | null, opts
         reject(new Error('Sign-in window was closed'))
       }
     })
-    void win.loadURL(authorizeUrl(cfg, state, pkce?.challenge)).catch(() => {
-      /* a load error caused by our own preventDefault is expected */
-    })
+    // The sign-in page is a real browser window, so an enforced proxy is applied to its session.
+    const proxy = activePolicy().enforcedProxy
+    const ready = proxy ? session.fromPartition('persist:apiman-oauth').setProxy({ proxyRules: proxy.url, proxyBypassRules: proxy.bypass }) : Promise.resolve()
+    void ready
+      .then(() => win.loadURL(authorizeUrl(cfg, state, pkce?.challenge)))
+      .catch(() => {
+        /* a load error caused by our own preventDefault is expected */
+      })
   })
 }
 

@@ -6,9 +6,14 @@
 The build isn't signed. Right-click ApiMan in Applications → **Open** → **Open**. You only need to do
 this once.
 
+**macOS: "Apple could not verify ApiMan is free of malware"**
+Releases aren't yet signed with an Apple Developer ID. Click **Done**, then **System Settings →
+Privacy & Security → Open Anyway** (see [Installing on macOS](getting-started.md#macos)).
+
 **macOS: "ApiMan is damaged and can't be opened"**
-macOS quarantined the download. Run `xattr -dr com.apple.quarantine /Applications/ApiMan.app`, then
-open it normally.
+This affects the 0.5.0 macOS downloads, which shipped with a broken signature. Install a newer
+release, or run `xattr -dr com.apple.quarantine /Applications/ApiMan.app` and open it normally.
+Release builds are now checked for a valid signature before they're published.
 
 **Windows: "Windows protected your PC"**
 Click **More info → Run anyway**. This appears for installers without a code-signing certificate.

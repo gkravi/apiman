@@ -7,8 +7,8 @@ Download the installer for your computer from the
 
 | Computer | File |
 |---|---|
-| Mac with Apple Silicon (M1 or later) | `ApiMan-<version>-arm64.dmg` |
-| Mac with an Intel processor | `ApiMan-<version>-x64.dmg` |
+| Mac with Apple Silicon (M1 or later) | `ApiMan-<version>-arm64.dmg` (or `.pkg` for MDM deployment) |
+| Mac with an Intel processor | `ApiMan-<version>-x64.dmg` (or `.pkg`) |
 | Windows PC (most PCs) | `ApiMan-Setup-<version>-x64.exe` |
 | Windows on ARM | `ApiMan-Setup-<version>-arm64.exe` |
 | Linux | `ApiMan-<version>.AppImage` or `apiman_<version>_amd64.deb` |
@@ -19,15 +19,22 @@ Not sure which Mac you have? Open  → **About This Mac**: "Chip: Apple M…" me
 ### macOS
 
 1. Open the `.dmg` and drag **ApiMan** into **Applications**.
-2. The first time, **right-click ApiMan → Open → Open**. (Unsigned builds can't be opened with a
-   double-click the first time; signed builds can.)
+2. Open ApiMan. Current releases are not yet signed with an Apple Developer ID, so the first time
+   macOS says *"Apple could not verify ApiMan is free of malware"*. Click **Done**, then open
+   **System Settings → Privacy & Security**, scroll to **Security** and click **Open Anyway** next
+   to the ApiMan message. Confirm with your password. (On macOS 14 and earlier, **right-click
+   ApiMan → Open → Open** also works.) You only need to do this once.
 
-If macOS says the app "is damaged and can't be opened", the download was quarantined. Run this once
-in Terminal, then open it normally:
+!!! warning "ApiMan 0.5.0 on macOS: ‘ApiMan is damaged and can’t be opened’"
+    The macOS downloads of 0.5.0 have a broken signature, so macOS refuses to open them and offers
+    no **Open Anyway** button. Install a later release, or, after checking the download against
+    `SHA256SUMS-macOS.txt`, run this once in Terminal and then open the app normally:
 
-```bash
-xattr -dr com.apple.quarantine /Applications/ApiMan.app
-```
+    ```bash
+    xattr -dr com.apple.quarantine /Applications/ApiMan.app
+    ```
+
+    This removes the "downloaded from the internet" flag from ApiMan only.
 
 ### Windows
 

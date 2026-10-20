@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { Scripts } from '@core/types'
 import { CodeEditor } from './CodeEditor'
+import { useStore } from '../store'
+import { ManagedBadge } from './Managed'
 
 type Phase = 'preRequest' | 'test'
 
@@ -43,11 +45,17 @@ const EMPTY: Scripts = { preRequest: '', test: '' }
 
 export function ScriptsEditor({ scripts = EMPTY, onChange, scopeLabel }: { scripts?: Scripts; onChange(s: Scripts): void; scopeLabel: string }): React.JSX.Element {
   const [phase, setPhase] = useState<Phase>('preRequest')
+  const disabled = useStore((s) => !!s.policy.policy.disableScripts)
   const value = scripts[phase]
   const insert = (code: string): void => onChange({ ...scripts, [phase]: value.trim() ? `${value.replace(/\s+$/, '')}\n\n${code}\n` : `${code}\n` })
 
   return (
     <div className="scripts-editor">
+      {disabled && (
+        <div className="managed-banner">
+          <ManagedBadge /> Scripts are turned off. They&apos;re kept with the {scopeLabel} but don&apos;t run.
+        </div>
+      )}
       <div className="scripts-phases">
         {(['preRequest', 'test'] as Phase[]).map((p) => (
           <button key={p} className={`phase-btn ${phase === p ? 'active' : ''}`} onClick={() => setPhase(p)}>
@@ -61,6 +69,7 @@ export function ScriptsEditor({ scripts = EMPTY, onChange, scopeLabel }: { scrip
           <CodeEditor
             value={value}
             onChange={(v) => onChange({ ...scripts, [phase]: v })}
+            readOnly={disabled}
             language="javascript"
             placeholder={phase === 'preRequest' ? `// Runs before this ${scopeLabel} is sent` : '// Runs after the response arrives — write tests with pm.test()'}
           />

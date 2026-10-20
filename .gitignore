@@ -3,3 +3,6 @@ dist
 node_modules
 out
 site/
+
+# Private business planning (the repository is public)
+business/

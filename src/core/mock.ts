@@ -4,6 +4,7 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { buildRoutes, matchMock, type MockLogEntry } from './mockRoutes'
 import { resolve } from './variables'
+import { activePolicy, MOCKS_DISABLED } from './policy'
 import type { Collection } from './types'
 
 export { buildRoutes, matchMock, mockPath, type MockLogEntry, type MockRoute } from './mockRoutes'
@@ -16,14 +17,41 @@ export interface MockServer {
   close(): Promise<void>
 }
 
+/** Host header names a loopback address (localhost, *.localhost, 127.x, [::1]), with any port. */
+export function isLocalHost(host: string | undefined): boolean {
+  if (!host) return false
+  const name = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.replace(/:\d+$/, '')
+  return /^(localhost|.+\.localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(name)
+}
+
+export function isLocalOrigin(origin: string): boolean {
+  try {
+    return isLocalHost(new URL(origin).host)
+  } catch {
+    return false
+  }
+}
+
 export function startMockServer(collection: Collection, port: number, onLog: (e: MockLogEntry) => void, host = '127.0.0.1'): Promise<MockServer> {
+  if (activePolicy().disableMockServers) return Promise.reject(new Error(MOCKS_DISABLED))
   let routes = buildRoutes(collection)
   const server = http.createServer((req, res) => {
     const path = req.url ?? '/'
     const log = (status: number, matched?: string): void => onLog({ timestamp: Date.now(), method: req.method ?? 'GET', path, status, matched })
-    // Permissive CORS so a front-end dev server can call the mock directly.
-    res.setHeader('Access-Control-Allow-Origin', String(req.headers.origin ?? '*'))
-    res.setHeader('Access-Control-Allow-Credentials', 'true')
+    // DNS-rebinding guard: a web page that points its own hostname at 127.0.0.1 still sends that
+    // hostname in Host, so only local names are served.
+    if (!isLocalHost(req.headers.host)) {
+      res.writeHead(421, { 'Content-Type': 'text/plain' }).end('ApiMan mock servers only answer requests addressed to localhost')
+      return log(421, 'blocked: non-local Host header')
+    }
+    // CORS for local front-end dev servers only: a website you happen to have open can't read
+    // mock responses (which may be saved examples of real data).
+    const origin = req.headers.origin
+    if (origin && isLocalOrigin(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin)
+      res.setHeader('Access-Control-Allow-Credentials', 'true')
+      res.setHeader('Vary', 'Origin')
+    } else if (!origin) res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Expose-Headers', '*')
     if (req.method === 'OPTIONS' && req.headers['access-control-request-method']) {
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS')

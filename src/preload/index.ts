@@ -39,7 +39,8 @@ const api: Api = {
   saveJson: (name, content) => ipcRenderer.invoke('dialog:saveJson', name, content),
   saveBinary: (name, base64) => ipcRenderer.invoke('dialog:saveBinary', name, base64),
   saveText: (name, content, extensions) => ipcRenderer.invoke('dialog:saveText', name, content, extensions),
-  notify: (title, body) => ipcRenderer.invoke('notify', title, body)
+  notify: (title, body) => ipcRenderer.invoke('notify', title, body),
+  getPolicy: () => ipcRenderer.invoke('policy:get')
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -49,6 +49,7 @@ nav:
       - Sending requests: requests.md
       - Collections and folders: collections.md
       - Variables and environments: variables.md
+      - Request chaining and templates: request-chaining.md
       - Authentication: authentication.md
       - Scripts and tests: scripting.md
       - Collection runner: collection-runner.md
@@ -62,6 +63,9 @@ nav:
       - Command-line runner: cli.md
       - Data, privacy and security: data-and-security.md
       - Troubleshooting: troubleshooting.md
+  - Security:
+      - Security audit: security/audit.md
+      - Enterprise deployment: security/enterprise.md
   - Reference:
       - Scripting API: reference/scripting-api.md
       - CLI options: reference/cli-options.md

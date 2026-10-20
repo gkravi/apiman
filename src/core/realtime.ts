@@ -6,8 +6,9 @@ import WebSocket from 'ws'
 import { CookieJar } from './cookies'
 import { connectTunnel, encodeBody, openClientRequest, proxyFor, tlsFor, type Transport } from './executor'
 import { prepareRequest } from './prepare'
-import { scopesFromVariables } from './run'
+import { chainingEnv, renderRequestTemplates, scopesFromVariables } from './run'
 import { SseParser } from './sse'
+import { assertHostAllowed, effectiveNetwork, effectiveVerifySsl, hostBlockedReason } from './policy'
 import type { PreparedRequest, RealtimeOpenInput, StreamEvent } from './types'
 
 export type Emit = (e: Omit<StreamEvent, 'timestamp'>) => void
@@ -27,10 +28,34 @@ function rawHeaders(raw: string[]): [string, string][] {
   return out
 }
 
+/**
+ * Render template functions ({{ $response(...) }}, {{ $uuid() }}…) in a live request before it
+ * connects. Referenced requests are sent as needed; their variable and cookie changes apply here.
+ */
+export async function renderLiveTemplates(input: RealtimeOpenInput, signal: AbortSignal = new AbortController().signal): Promise<RealtimeOpenInput> {
+  let variables = input.variables
+  const jar = new CookieJar(input.cookies ?? [])
+  const env = chainingEnv({
+    input: { ...input, info: { requestName: input.request.name, requestId: input.request.id, iteration: 0, iterationCount: 1 } },
+    signal,
+    jar,
+    getVariables: () => variables,
+    setVariables: (v) => (variables = v),
+    log: () => {}
+  })
+  try {
+    const request = await renderRequestTemplates(input.request, env)
+    return { ...input, request, variables, cookies: jar.toJSON() }
+  } catch (e) {
+    throw new Error(`Template: ${(e as Error).message}`)
+  }
+}
+
 /** Prepare a realtime request: variables, auth and the right URL scheme. */
 export function prepareRealtime(input: RealtimeOpenInput): PreparedRequest {
   const prepared = prepareRequest(input.request, scopesFromVariables(input.variables), input.parentAuths)
   if (input.request.protocol === 'websocket') prepared.url = prepared.url.replace(/^http(s?):\/\//i, 'ws$1://')
+  prepared.settings = { ...prepared.settings, verifySsl: effectiveVerifySsl(prepared.settings.verifySsl) }
   return prepared
 }
 
@@ -46,11 +71,13 @@ export async function openWebSocket(input: RealtimeOpenInput, emit: Emit): Promi
   const prepared = prepareRealtime(input)
   const url = new URL(prepared.url)
   if (!/^wss?:$/.test(url.protocol)) throw new Error('WebSocket URL must start with ws:// or wss://')
+  assertHostAllowed(url)
   const secure = url.protocol === 'wss:'
+  const network = effectiveNetwork(input.network)
   const jar = new CookieJar(input.cookies ?? [])
   const headers = withCookies(prepared, url, jar)
-  const tlsOpts = await tlsFor(url, input.network)
-  const proxy = proxyFor(new URL(url.toString().replace(/^ws/i, 'http')), input.network)
+  const tlsOpts = await tlsFor(url, network)
+  const proxy = proxyFor(new URL(url.toString().replace(/^ws/i, 'http')), network)
   const tunnel = proxy ? await connectTunnel(proxy, new URL(url.toString().replace(/^ws/i, 'http')), prepared.settings.timeoutMs, new AbortController().signal) : undefined
   const protocols = (input.request.subprotocols ?? '')
     .split(',')
@@ -69,6 +96,13 @@ export async function openWebSocket(input: RealtimeOpenInput, emit: Emit): Promi
       : {})
   } as WebSocket.ClientOptions)
 
+  // Redirects are followed inside ws, so each target is checked against the host policy here.
+  ws.on('redirect', (to: string) => {
+    const reason = hostBlockedReason(to)
+    if (!reason) return
+    emit({ kind: 'error', data: `Redirect refused: ${reason}` })
+    ws.terminate()
+  })
   ws.on('upgrade', (res) => emit({ kind: 'info', data: `${res.statusCode} ${res.statusMessage ?? ''} — handshake response`, meta: headerText(rawHeaders(res.rawHeaders)) }))
   ws.on('open', () => emit({ kind: 'open', data: `Connected to ${url}`, meta: ws.protocol ? `Sub-protocol: ${ws.protocol}` : undefined }))
   ws.on('message', (data, isBinary) => {
@@ -102,6 +136,8 @@ export async function openWebSocket(input: RealtimeOpenInput, emit: Emit): Promi
 export async function openSse(input: RealtimeOpenInput, emit: Emit): Promise<RealtimeSession> {
   const prepared = prepareRealtime(input)
   const url = new URL(prepared.url)
+  assertHostAllowed(url)
+  const network = effectiveNetwork(input.network)
   const jar = new CookieJar(input.cookies ?? [])
   const headers = withCookies(prepared, url, jar)
   if (!headers.some(([k]) => k.toLowerCase() === 'accept')) headers.push(['Accept', 'text/event-stream'])
@@ -110,7 +146,7 @@ export async function openSse(input: RealtimeOpenInput, emit: Emit): Promise<Rea
   if (contentType && !headers.some(([k]) => k.toLowerCase() === 'content-type')) headers.push(['Content-Type', contentType])
 
   const ctrl = new AbortController()
-  const tr: Transport = { verifySsl: prepared.settings.verifySsl, timeoutMs: prepared.settings.timeoutMs, tls: await tlsFor(url, input.network), proxy: proxyFor(url, input.network) }
+  const tr: Transport = { verifySsl: prepared.settings.verifySsl, timeoutMs: prepared.settings.timeoutMs, tls: await tlsFor(url, network), proxy: proxyFor(url, network) }
   emit({ kind: 'connecting', data: `${prepared.method} ${url}`, meta: headerText(headers) })
   const req = await openClientRequest(prepared.method, url, headers, tr, ctrl.signal)
   let closed = false

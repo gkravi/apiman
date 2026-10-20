@@ -1,4 +1,5 @@
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
+import { handle } from './ipc'
 import { startMockServer, type MockServer } from '@core/mock'
 import type { Collection } from '@core/types'
 
@@ -6,7 +7,7 @@ import type { Collection } from '@core/types'
 const servers = new Map<string, MockServer>()
 
 export function registerMocks(): void {
-  ipcMain.handle('mock:start', async (e, collectionId: string, collection: Collection, port: number) => {
+  handle('mock:start', async (e, collectionId: string, collection: Collection, port: number) => {
     await servers.get(collectionId)?.close()
     servers.delete(collectionId)
     try {
@@ -17,10 +18,10 @@ export function registerMocks(): void {
       return { ok: false, error: (err as Error).message }
     }
   })
-  ipcMain.handle('mock:stop', async (_e, collectionId: string) => {
+  handle('mock:stop', async (_e, collectionId: string) => {
     await servers.get(collectionId)?.close()
     servers.delete(collectionId)
   })
-  ipcMain.handle('mock:update', (_e, collectionId: string, collection: Collection) => servers.get(collectionId)?.setCollection(collection))
+  handle('mock:update', (_e, collectionId: string, collection: Collection) => servers.get(collectionId)?.setCollection(collection))
   app.on('before-quit', () => servers.forEach((s) => void s.close()))
 }

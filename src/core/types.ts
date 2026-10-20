@@ -364,6 +364,12 @@ export interface RunVariables {
 
 export interface RunRequestInput extends RunStep {
   variables: RunVariables
+  /** The request's collection, so {{ $response('Other request') }} can find and send siblings. */
+  collection?: Collection
+  /** Answers to {{ $prompt('Label') }}, collected before sending. */
+  prompts?: Record<string, string>
+  /** Requests already being sent in this chain, outermost first (cycle detection). */
+  chain?: { id: string; name: string }[]
   /** Cookie jar contents going in; the updated jar comes back on the result. */
   cookies?: Cookie[]
   network?: NetworkSettings
@@ -446,6 +452,9 @@ export interface RealtimeOpenInput {
   variables: RunVariables
   cookies?: Cookie[]
   network?: NetworkSettings
+  /** For template functions: $response() siblings and $prompt() answers. */
+  collection?: Collection
+  prompts?: Record<string, string>
 }
 
 export interface GrpcMethodInfo {

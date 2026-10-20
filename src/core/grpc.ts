@@ -7,6 +7,7 @@ import protobuf from 'protobufjs'
 import { existsSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { tlsFor } from './executor'
+import { activePolicy, assertHostAllowed, effectiveNetwork } from './policy'
 import { prepareRealtime, type Emit, type RealtimeSession } from './realtime'
 import { reflectFileDescriptorSet } from './grpc-reflection'
 import 'protobufjs/ext/descriptor' // adds Root.fromDescriptor
@@ -123,11 +124,18 @@ export interface GrpcConnection {
 export async function grpcConnection(input: RealtimeOpenInput): Promise<GrpcConnection> {
   const prepared = prepareRealtime(input)
   const { address, secure } = parseTarget(prepared.url)
+  assertHostAllowed(`${secure ? 'grpcs' : 'grpc'}://${address}`)
+  // grpc-js takes its proxy only from the environment; grpc_proxy is read by nothing else.
+  const proxy = activePolicy().enforcedProxy
+  if (proxy) {
+    process.env.grpc_proxy = proxy.url
+    process.env.no_grpc_proxy = proxy.bypass
+  }
   const metadata = new grpc.Metadata()
   for (const [k, v] of prepared.headers) if (!SKIP_METADATA.test(k)) metadata.add(k.toLowerCase(), v)
   let creds = grpc.credentials.createInsecure()
   if (secure) {
-    const t = await tlsFor(new URL(`https://${address}`), input.network)
+    const t = await tlsFor(new URL(`https://${address}`), effectiveNetwork(input.network))
     const toBuf = (v: unknown): Buffer | null => (v === undefined ? null : Buffer.isBuffer(v) ? v : Buffer.from(Array.isArray(v) ? v.join('\n') : String(v)))
     creds = grpc.credentials.createSsl(toBuf(t.ca), toBuf(t.key), toBuf(t.cert), prepared.settings.verifySsl ? undefined : { checkServerIdentity: () => undefined })
   }

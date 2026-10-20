@@ -3,9 +3,10 @@
 // pm.sendRequest, which is proxied back to the host executor. Each script gets a fresh runtime
 // with memory, stack and CPU-time limits.
 
-import { getQuickJS, shouldInterruptAfterDeadline, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
+import { newQuickJSWASMModule, shouldInterruptAfterDeadline, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
 import { randomBytes } from 'node:crypto'
 import { PRELUDE } from './sandbox-prelude'
+import { activePolicy, SCRIPTS_DISABLED } from './policy'
 import { SANDBOX_LIBRARIES } from './sandbox-libs'
 import type { ConsoleEntry, LogLevel, RunVariables, TestResult } from './types'
 
@@ -60,8 +61,11 @@ export interface SandboxOptions {
 const DEFAULTS = { timeoutMs: 5000, memoryLimitBytes: 64 * 1024 * 1024, maxSendRequests: 25 }
 const LEVELS: LogLevel[] = ['log', 'info', 'warn', 'error']
 
-let quickjs: ReturnType<typeof getQuickJS> | undefined
-const loadQuickJS = (): ReturnType<typeof getQuickJS> => (quickjs ??= getQuickJS())
+// One WASM module is shared by all scripts. If a script leaves it unusable (QuickJS aborts while
+// freeing a runtime that ran out of memory), it's dropped and the next script loads a fresh one,
+// so a hostile script can't disable scripting for the rest of the session.
+let quickjs: ReturnType<typeof newQuickJSWASMModule> | undefined
+const loadQuickJS = (): ReturnType<typeof newQuickJSWASMModule> => (quickjs ??= newQuickJSWASMModule())
 
 function errorMessage(ctx: QuickJSContext, handle: QuickJSHandle): string {
   const e = ctx.dump(handle) as { name?: string; message?: string; stack?: string } | string
@@ -74,6 +78,7 @@ function errorMessage(ctx: QuickJSContext, handle: QuickJSHandle): string {
 }
 
 export async function runScript(code: string, sc: ScriptContext, options: SandboxOptions = {}): Promise<ScriptOutcome> {
+  if (activePolicy().disableScripts) return { variables: sc.variables, request: sc.request, tests: [], console: [], error: SCRIPTS_DISABLED, skipRequest: false }
   const opts = { ...DEFAULTS, ...options }
   const QuickJS = await loadQuickJS()
   const runtime = QuickJS.newRuntime()
@@ -200,8 +205,13 @@ export async function runScript(code: string, sc: ScriptContext, options: Sandbo
   } catch (e) {
     outcome.error ??= (e as Error).message
   } finally {
-    ctx.dispose()
-    runtime.dispose()
+    try {
+      ctx.dispose()
+      runtime.dispose()
+    } catch {
+      quickjs = undefined
+      outcome.error ??= 'Script stopped: it exceeded the sandbox memory limit'
+    }
   }
   return outcome
 }

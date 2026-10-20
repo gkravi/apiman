@@ -62,9 +62,26 @@ Requires an [Apple Developer Program](https://developer.apple.com/programs/) mem
    | `APPLE_API_KEY_BASE64` | `base64 -i AuthKey_XXXX.p8 \| pbcopy`, then paste |
    | `APPLE_API_KEY_ID` | Key ID |
    | `APPLE_API_ISSUER` | Issuer ID |
+   | `MAC_CSC_INSTALLER_LINK` | Optional: base64 `.p12` of a **Developer ID Installer** certificate, to sign the `.pkg` |
+   | `MAC_CSC_INSTALLER_KEY_PASSWORD` | Its password |
 
 The app is signed with the hardened runtime (`build/entitlements.mac.plist` allows the JIT that V8
-and the WebAssembly sandbox need, plus network client/server) and notarised automatically.
+and the WebAssembly sandbox need, plus network client/server) and notarised automatically. When the
+installer certificate is present, the workflow also notarises and staples the `.pkg`.
+
+Without a certificate, the app still gets a valid **ad-hoc** signature: the Electron fuses step
+(`resetAdHocDarwinSignature` in `electron-builder.config.cjs`) re-signs the bundle. That signature
+matters: if a downloaded app's signature doesn't verify, macOS calls it "damaged" and offers no way
+to open it. The v0.5.0 macOS release shipped that way.
+
+Every release build runs a **Verify macOS signatures** step before uploading anything. It runs
+`codesign --verify --deep --strict` on each app. For notarised builds it also runs
+`spctl --assess` and `xcrun stapler validate`. A build that fails is never published. To check a
+local build the same way:
+
+```bash
+codesign --verify --deep --strict --verbose=2 dist/mac-arm64/ApiMan.app
+```
 
 To sign locally instead, have the Developer ID certificate in your login keychain and set
 `APPLE_API_KEY` (path to the `.p8`), `APPLE_API_KEY_ID` and `APPLE_API_ISSUER` before `npm run dist`.
@@ -78,6 +95,17 @@ Buy a code-signing certificate from a certificate authority, export it as a `.pf
 | `WIN_CSC_LINK` | base64 of the `.pfx` |
 | `WIN_CSC_KEY_PASSWORD` | Its password |
 
-Certificates stored on hardware tokens or cloud HSMs (common for newer EV/OV certificates) need a
-signing service such as Azure Trusted Signing instead; see the
-[electron-builder Windows signing docs](https://www.electron.build/code-signing-win).
+Since 2023, CAs issue new OV and EV certificates only on hardware tokens or cloud HSMs, so a
+`.pfx` export is often not possible. The simpler route is **Azure Trusted Signing**, Microsoft's
+managed signing service (identity-validated, a few dollars a month). Set it up in Azure, create an
+app registration with the *Trusted Signing Certificate Profile Signer* role, then add:
+
+| Kind | Name | Value |
+|---|---|---|
+| Secret | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` | The app registration |
+| Variable | `AZURE_TRUSTED_SIGNING_ENDPOINT` | e.g. `https://eus.codesigning.azure.net` |
+| Variable | `AZURE_TRUSTED_SIGNING_ACCOUNT` | Trusted Signing account name |
+| Variable | `AZURE_TRUSTED_SIGNING_PROFILE` | Certificate profile name |
+| Variable | `AZURE_TRUSTED_SIGNING_PUBLISHER` | The publisher name on the certificate (must match exactly) |
+
+See the [electron-builder Windows signing docs](https://www.electron.build/code-signing-win).

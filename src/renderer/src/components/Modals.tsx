@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { newCollection, newKeyValue } from '@core/factory'
 import { parseCurl } from '@core/curl'
 import { generateSnippet, SNIPPET_LANGUAGES, type SnippetLanguage } from '@core/codegen'
+import { detachFiles } from '@core/security'
 import { importPostmanCollection, importPostmanEnvironment, isPostmanCollection, isPostmanEnvironment } from '@core/postman'
 import { importOpenApi, isOpenApi, parseSpecText } from '@core/openapi'
 import type { CollectionItem, Variable } from '@core/types'
@@ -64,10 +65,15 @@ function ImportModal({ close }: { close(): void }): React.JSX.Element {
         s.setSidebar('collections')
         s.showToast(`Imported "${c.name}" from ${json.swagger ? 'Swagger 2.0' : `OpenAPI ${json.openapi}`}`)
       } else if (isPostmanCollection(json)) {
-        const c = importPostmanCollection(json)
+        // Shared collections never get to choose which local files are uploaded.
+        const { collection: c, detached } = detachFiles(importPostmanCollection(json))
         s.addCollection(c)
         s.setSidebar('collections')
-        s.showToast(`Imported collection "${c.name}"`)
+        s.showToast(
+          detached.length
+            ? `Imported collection "${c.name}" — ${detached.length} file attachment${detached.length === 1 ? '' : 's'} cleared for safety; choose the file${detached.length === 1 ? '' : 's'} again before sending`
+            : `Imported collection "${c.name}"`
+        )
       } else if (isPostmanEnvironment(json)) {
         const e = importPostmanEnvironment(json)
         s.addEnvironment(e)
@@ -446,6 +452,58 @@ function PromptModal({ title, initial, onSubmit, close }: { title: string; initi
   )
 }
 
+/** Values for {{ $prompt('Label', 'default') }} templates, asked for just before sending. */
+function TemplatePromptsModal({
+  requestName,
+  prompts,
+  onSubmit,
+  close
+}: {
+  requestName: string
+  prompts: { label: string; defaultValue: string }[]
+  onSubmit(answers: Record<string, string>): void
+  close(): void
+}): React.JSX.Element {
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(prompts.map((p) => [p.label, p.defaultValue])))
+  const submit = (): void => {
+    close()
+    onSubmit(values)
+  }
+  return (
+    <Shell
+      title={`Values for ${requestName}`}
+      onClose={close}
+      footer={
+        <>
+          <span className="spacer" />
+          <button className="btn ghost" onClick={close}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={submit}>
+            Send
+          </button>
+        </>
+      }
+    >
+      <div className="template-prompts">
+        {prompts.map((p, i) => (
+          <label key={p.label}>
+            <span>{p.label}</span>
+            <input
+              className="full"
+              autoFocus={i === 0}
+              value={values[p.label] ?? ''}
+              spellCheck={false}
+              onChange={(e) => setValues((v) => ({ ...v, [p.label]: e.target.value }))}
+              onKeyDown={(e) => e.key === 'Enter' && submit()}
+            />
+          </label>
+        ))}
+      </div>
+    </Shell>
+  )
+}
+
 export function ModalHost(): React.JSX.Element | null {
   const modal: Modal | null = useStore((s) => s.modal)
   const openModal = useStore((s) => s.openModal)
@@ -464,6 +522,8 @@ export function ModalHost(): React.JSX.Element | null {
       return <CollectionModal collectionId={modal.collectionId} close={close} />
     case 'prompt':
       return <PromptModal title={modal.title} initial={modal.initial} onSubmit={modal.onSubmit} close={close} />
+    case 'templatePrompts':
+      return <TemplatePromptsModal requestName={modal.requestName} prompts={modal.prompts} onSubmit={modal.onSubmit} close={close} />
     case 'folder':
       return <FolderModal folderId={modal.folderId} close={close} />
     case 'runner':

@@ -51,8 +51,11 @@ No match returns `404` with JSON listing the available routes, which makes typos
 
 ### Good to know
 
-- CORS is open (`Access-Control-Allow-Origin` echoes the caller, preflight `OPTIONS` answered), so
-  browser apps on another port can call the mock directly.
+- CORS is open to **local** origins (`http://localhost:*`, `127.0.0.1`, `*.localhost`): browser apps
+  on another port can call the mock directly, and preflight `OPTIONS` is answered. Websites on the
+  internet can't read mock responses.
+- Requests must be addressed to a local hostname; anything else gets `421` (this blocks DNS
+  rebinding).
 - Edits apply while it runs: add an example or change a URL and the next request sees it.
 - It listens on `127.0.0.1` only, so it isn't reachable from other machines.
 - Request bodies are ignored; matching is by method and path.
