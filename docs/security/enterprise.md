@@ -53,7 +53,7 @@ the [releases page](https://github.com/gkravi/apiman/releases).
 1. **Verify the download** against `SHA256SUMS-<OS>.txt` from the same release:
 
     ```bash
-    shasum -a 256 ApiMan-0.5.0-arm64.dmg
+    shasum -a 256 ApiMan-0.5.1-arm64.dmg
     ```
 
 2. **Distribute** it with your usual tooling: Jamf, Intune, SCCM, Munki or an internal apt

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Version audited** | 0.5.0 + unreleased changes (October 2026) |
+| **Version audited** | 0.5.1 (October 2026) |
 | **Date** | 17 October 2026 |
 | **Type** | Internal white-box review: source code review, threat modelling, automated tests and manual testing of a packaged-equivalent build |
 | **Result** | 9 issues found (1 high, 3 medium, 4 low, 1 informational); all 9 fixed. Plus 3 items accepted or open for the roadmap |

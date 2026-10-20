@@ -2,7 +2,7 @@
 
 All notable changes to ApiMan. Versions follow [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.5.1 — 2026-10-19
 
 ### Fixed
 - **macOS: "ApiMan is damaged and can't be opened."** The 0.5.0 macOS downloads had an invalid
