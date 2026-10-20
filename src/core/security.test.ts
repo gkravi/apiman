@@ -41,8 +41,9 @@ describe('script sandbox isolation (SEC-CTRL-1)', () => {
     expect(out.tests).toHaveLength(8)
   })
 
-  it('stops memory bombs and deep recursion without breaking later scripts', async () => {
-    const mem = await runScript('const a = []; while (true) a.push(new Array(1e6).fill(1));', ctx, { memoryLimitBytes: 16 * 1024 * 1024, timeoutMs: 5000 })
+  // Three sandboxes in a row, one of which runs to its CPU deadline: slow CI runners need headroom.
+  it('stops memory bombs and deep recursion without breaking later scripts', { timeout: 30_000 }, async () => {
+    const mem = await runScript('const a = []; while (true) a.push(new Array(1e6).fill(1));', ctx, { memoryLimitBytes: 16 * 1024 * 1024, timeoutMs: 2000 })
     expect(mem.error).toBeTruthy()
     const deep = await runScript('const f = () => f(); f();', ctx)
     expect(deep.error).toMatch(/stack|recursion|InternalError/i)

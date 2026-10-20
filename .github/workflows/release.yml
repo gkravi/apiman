@@ -30,7 +30,7 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            target: --mac --arm64 --x64
+            target: --mac  # arm64 and x64, built in turn (see Package)
           - os: windows-latest
             target: --win
           - os: ubuntu-latest
@@ -94,7 +94,19 @@ jobs:
             done
           fi
 
-      - run: npx electron-builder --config electron-builder.config.cjs ${{ matrix.target }} --publish never
+      # macOS architectures are built one at a time: the pkg target uses a fixed temporary file
+      # (dist/<appId>.pkg), so building arm64 and x64 in one run makes them delete each other's.
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            for arch in --arm64 --x64; do
+              npx electron-builder --config electron-builder.config.cjs --mac "$arch" --publish never
+            done
+          else
+            npx electron-builder --config electron-builder.config.cjs ${{ matrix.target }} --publish never
+          fi
 
       # A broken signature makes macOS call the download "damaged" with no way to open it, so a
       # build that doesn't verify never reaches the release.
