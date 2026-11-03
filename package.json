@@ -24,7 +24,7 @@
     "nanoid": "^6.0.2",
     "protobufjs": "^7.6.6",
     "quickjs-emscripten": "^0.32.0",
-    "ws": "^8.22.0",
+    "ws": "^8.22.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
