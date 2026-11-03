@@ -19,7 +19,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "@grpc/grpc-js": "^1.14.6",
+    "@grpc/grpc-js": "^1.14.7",
     "@grpc/proto-loader": "^0.8.1",
     "nanoid": "^6.0.2",
     "protobufjs": "^7.6.6",
